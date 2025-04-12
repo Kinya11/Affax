@@ -11,21 +11,25 @@ const api = axios.create({
 
 // Request interceptor
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('token');
-  const deviceId = localStorage.getItem('deviceId');
+  const token = localStorage.getItem('token')
+  const deviceId = localStorage.getItem('deviceId')
+  
+  if (!config.headers) {
+    config.headers = {}
+  }
   
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers.Authorization = `Bearer ${token}`
   }
   
   if (deviceId) {
-    config.headers['X-Device-ID'] = deviceId;
+    config.headers['X-Device-ID'] = deviceId
   }
   
-  return config;
+  return config
 }, error => {
-  return Promise.reject(error);
-});
+  return Promise.reject(error)
+})
 
 // Response interceptor
 api.interceptors.response.use(

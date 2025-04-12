@@ -5,8 +5,10 @@ const auth = {
     const response = await api.post('/api/auth/login', credentials);
     if (response.data.token) {
       localStorage.setItem('token', response.data.token);
-      if (response.data.user) {
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      // Store the device ID used for login
+      if (credentials.deviceId) {
+        localStorage.setItem('currentDeviceId', credentials.deviceId);
       }
     }
     return response;
@@ -15,18 +17,24 @@ const auth = {
   async logout() {
     try {
       const token = this.getToken();
+      const currentDeviceId = localStorage.getItem('currentDeviceId');
+      
       if (token) {
         await api.post('/api/auth/logout', {}, {
           headers: {
-            Authorization: `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'X-Device-ID': currentDeviceId // Include device ID in logout request
           }
         });
       }
+      
+      // Clear auth data but preserve device ID
       this.clearAuthData();
+      if (currentDeviceId) {
+        localStorage.setItem('currentDeviceId', currentDeviceId);
+      }
     } catch (error) {
       console.error('Logout error:', error);
-      // Even if the server request fails, clear local data
-      this.clearAuthData();
       throw error;
     }
   },

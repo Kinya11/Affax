@@ -81,28 +81,37 @@ app.use((err, req, res, next) => {
 });
 
 const checkDeviceOrAdmin = async (req, res, next) => {
-  if (req.user?.isAdmin) {
-    return next();
+  try {
+    const deviceId = req.headers['x-device-id']
+    
+    if (!deviceId && !req.user?.isAdmin) {
+      return res.status(403).json({
+        error: 'Device registration required',
+        errorCode: 'DEVICE_NOT_REGISTERED'
+      })
+    }
+
+    if (req.user?.isAdmin) {
+      return next()
+    }
+
+    const [device] = await pool.query(
+      'SELECT * FROM devices WHERE device_id = ? AND user_id = ?',
+      [deviceId, req.user.userId]
+    )
+
+    if (!device.length) {
+      return res.status(403).json({
+        error: 'Device not registered or unauthorized',
+        errorCode: 'DEVICE_NOT_AUTHORIZED'
+      })
+    }
+
+    next()
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' })
   }
-
-  // Original device check logic
-  const deviceId = req.headers['x-device-id'];
-  if (!deviceId) {
-    return res.status(403).json({ error: 'Device ID required' });
-  }
-
-  const [device] = await pool.query(
-    `SELECT id FROM devices 
-     WHERE user_id = ? AND device_id = ? AND is_active = TRUE`,
-    [req.user.userId, deviceId]
-  );
-
-  if (!device.length) {
-    return res.status(403).json({ error: 'Device not registered' });
-  }
-
-  next();
-};
+}
 
 // Create devices table if it doesn't exist
 async function initializeDatabase() {
@@ -825,14 +834,18 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.post("/api/auth/google-login", async (req, res) => {
   try {
+    console.log("Received google-login request:", {
+      hasIdToken: !!req.body.id_token,
+      deviceId: req.body.deviceId
+    });
+
     // Validate request
     if (!req.body.id_token) {
       return res.status(400).json({ error: "Missing ID token" });
     }
 
-    if (!process.env.GOOGLE_CLIENT_ID) {
-      console.error("Google Client ID not configured");
-      return res.status(500).json({ error: "OAuth configuration error" });
+    if (!req.body.deviceId) {
+      return res.status(400).json({ error: "Missing device ID" });
     }
 
     // Verify the token
@@ -848,85 +861,97 @@ app.post("/api/auth/google-login", async (req, res) => {
     }
 
     const payload = ticket.getPayload();
+    console.log("Google payload received:", {
+      email: payload.email,
+      sub: payload.sub
+    });
     
     if (!payload?.email) {
       return res.status(400).json({ error: "Email not provided in Google payload" });
     }
 
     // Find or create user
-    const [users] = await pool.query(
-      "SELECT * FROM users WHERE email = ?",
-      [payload.email]
-    );
-
-    let user = users[0];
-
-    if (!user) {
-      // Create new user
-      const [result] = await pool.query(
-        `INSERT INTO users (
-          email, 
-          first_name, 
-          last_name, 
-          google_id,
-          created_at
-        ) VALUES (?, ?, ?, ?, NOW())`,
-        [
-          payload.email,
-          payload.given_name || '',
-          payload.family_name || '',
-          payload.sub
-        ]
+    let user;
+    try {
+      const [users] = await pool.query(
+        "SELECT * FROM users WHERE email = ?",
+        [payload.email]
       );
-      
-      user = {
-        user_id: result.insertId,
-        email: payload.email,
-        first_name: payload.given_name,
-        last_name: payload.family_name,
-        google_id: payload.sub,
-        is_admin: false
-      };
-    }
 
-    // Check device registration if deviceId provided
-    let requiresDeviceRegistration = true;
-    if (req.body.deviceId) {
+      user = users[0];
+
+      if (!user) {
+        console.log("Creating new user for:", payload.email);
+        const [result] = await pool.query(
+          `INSERT INTO users (
+            email, 
+            first_name, 
+            last_name, 
+            google_id,
+            created_at
+          ) VALUES (?, ?, ?, ?, NOW())`,
+          [
+            payload.email,
+            payload.given_name || '',
+            payload.family_name || '',
+            payload.sub
+          ]
+        );
+        
+        user = {
+          user_id: result.insertId,
+          email: payload.email,
+          first_name: payload.given_name,
+          last_name: payload.family_name,
+          google_id: payload.sub,
+          is_admin: false
+        };
+      }
+
+      // Check device registration status
       const [devices] = await pool.query(
         `SELECT id FROM devices 
-         WHERE user_id = ? AND device_id = ? AND is_active = TRUE`,
+         WHERE user_id = ? 
+         AND device_id = ? 
+         AND is_active = TRUE`,
         [user.user_id, req.body.deviceId]
       );
-      requiresDeviceRegistration = devices.length === 0;
+
+      const requiresDeviceRegistration = devices.length === 0;
+
+      const token = jwt.sign(
+        { 
+          userId: user.user_id,
+          isAdmin: user.is_admin || false
+        }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: "1h" }
+      );
+
+      return res.json({
+        token,
+        expires_in: 3600,
+        user: {
+          id: user.user_id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          isAdmin: user.is_admin || false
+        },
+        requiresDeviceRegistration
+      });
+
+    } catch (dbError) {
+      console.error("Database error:", dbError);
+      return res.status(500).json({
+        error: "Database operation failed",
+        details: process.env.NODE_ENV === "development" ? dbError.message : undefined
+      });
     }
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { 
-        userId: user.user_id,
-        isAdmin: user.is_admin || false
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
-
-    // Send response
-    res.json({
-      token,
-      user: {
-        id: user.user_id,
-        email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        isAdmin: user.is_admin || false
-      },
-      requiresDeviceRegistration,
-      deviceId: req.body.deviceId
-    });
 
   } catch (error) {
     console.error("Google login error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "Authentication failed",
       details: process.env.NODE_ENV === "development" ? error.message : undefined
     });
@@ -1010,8 +1035,18 @@ app.post("/api/devices/register", authenticateToken, async (req, res) => {
     const { userId } = req.user;
     const { deviceId, deviceName, platform } = req.body;
 
-    if (!deviceId || !deviceName || !platform) {
-      return res.status(400).json({ error: "Missing required fields" });
+    console.log('Device registration request:', {
+      userId,
+      deviceId,
+      deviceName,
+      platform
+    });
+
+    if (!deviceId || !platform) {
+      return res.status(400).json({
+        error: "Missing required fields",
+        details: { required: ['deviceId', 'platform'] }
+      });
     }
 
     // Get active devices count
@@ -1020,7 +1055,7 @@ app.post("/api/devices/register", authenticateToken, async (req, res) => {
       [userId]
     );
 
-    // Check device limit (adjust the limit as needed)
+    // Check device limit
     const DEVICE_LIMIT = 5;
     if (activeDevices[0].count >= DEVICE_LIMIT) {
       return res.status(429).json({
@@ -1034,33 +1069,47 @@ app.post("/api/devices/register", authenticateToken, async (req, res) => {
 
     // Insert or update device
     await pool.query(`
-      INSERT INTO devices (user_id, device_id, device_name, platform)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO devices (user_id, device_id, device_name, platform, is_active, last_active)
+      VALUES (?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP)
       ON DUPLICATE KEY UPDATE
         device_name = VALUES(device_name),
         platform = VALUES(platform),
         is_active = TRUE,
         last_active = CURRENT_TIMESTAMP
-    `, [userId, deviceId, deviceName, platform]);
-
-    // Log device activity
-    await pool.query(`
-      INSERT INTO device_activity (device_id, user_id, activity_type)
-      VALUES (?, ?, 'register')
-    `, [deviceId, userId]);
+    `, [userId, deviceId, deviceName || `${platform} Device`, platform]);
 
     res.json({
       success: true,
       details: {
         deviceId,
-        deviceName,
+        deviceName: deviceName || `${platform} Device`,
         platform
       }
     });
 
   } catch (error) {
-    console.error("Device registration error:", error);
-    res.status(500).json({ 
+    console.error("Device registration error:", {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    
+    // Handle specific MySQL errors
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({
+        error: "Database setup required",
+        details: "Devices table not found"
+      });
+    }
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        error: "Device already registered",
+        details: "Duplicate device registration attempt"
+      });
+    }
+
+    res.status(500).json({
       error: "Failed to register device",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -1496,100 +1545,109 @@ app.post('/api/make-admin/:email', async (req, res) => {
 });
 
 // Installation Routes
-app.post("/api/lists/:listId/install", authenticateToken, checkDeviceOrAdmin, async (req, res) => {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    const { listId } = req.params;
-    const { sudoPassword } = req.body;
+app.post("/api/lists/:listId/install", 
+  authenticateToken, 
+  checkDeviceOrAdmin, 
+  async (req, res) => {
+    console.log('Install request:', {
+      userId: req.user?.userId,
+      deviceId: req.headers['x-device-id'],
+      listId: req.params.listId
+    })
     
-    if (!sudoPassword) {
-      await conn.rollback();
-      return res.status(400).json({
-        error: "Sudo password is required",
-        errorCode: "MISSING_PASSWORD"
-      });
-    }
-
-    const installationManager = new InstallationManager();
-    
+    const conn = await pool.getConnection();
     try {
-      const isValidPassword = await installationManager.validateSudoPassword(sudoPassword);
+      await conn.beginTransaction();
+
+      const { listId } = req.params;
+      const { sudoPassword } = req.body;
       
-      if (!isValidPassword) {
+      if (!sudoPassword) {
         await conn.rollback();
-        return res.status(403).json({
-          error: "Incorrect Password",
-          errorCode: "INVALID_PASSWORD"
+        return res.status(400).json({
+          error: "Sudo password is required",
+          errorCode: "MISSING_PASSWORD"
         });
       }
+
+      const installationManager = new InstallationManager();
+      
+      try {
+        const isValidPassword = await installationManager.validateSudoPassword(sudoPassword);
+        
+        if (!isValidPassword) {
+          await conn.rollback();
+          return res.status(403).json({
+            error: "Incorrect Password",
+            errorCode: "INVALID_PASSWORD"
+          });
+        }
+      } catch (error) {
+        console.error('Password validation error:', error);
+        await conn.rollback();
+        return res.status(500).json({
+          error: "Failed to validate password",
+          errorCode: "VALIDATION_ERROR"
+        });
+      }
+
+      // Get apps with valid install commands
+      const [apps] = await conn.query(
+        `SELECT a.id, a.name, a.install_command 
+         FROM list_items li
+         JOIN apps a ON li.app_id = a.id
+         WHERE li.list_id = ? AND a.install_command IS NOT NULL
+         AND JSON_VALID(a.install_command)`,
+        [listId]
+      );
+
+      if (!apps.length) {
+        await conn.rollback();
+        return res.status(400).json({
+          error: "No valid apps to install",
+          errorCode: "NO_VALID_APPS"
+        });
+      }
+
+      // Create installation record
+      const [result] = await conn.query(
+        `INSERT INTO installations 
+         (user_id, device_id, list_id, status, apps_count)
+         VALUES (?, ?, ?, 'pending', ?)`,
+        [req.user.userId, req.headers["x-device-id"], listId, apps.length]
+      );
+
+      await conn.commit();
+
+      // Start installation in background
+      installationManager
+        .startInstallation(result.insertId, apps, sudoPassword)
+        .catch((err) => {
+          console.error("Background installation error:", err);
+          pool.query(
+            'UPDATE installations SET status = ?, error_log = ? WHERE id = ?',
+            ['failed', err.message || 'Installation failed', result.insertId]
+          ).catch(console.error);
+        });
+
+      res.json({
+        success: true,
+        installationId: result.insertId,
+        totalApps: apps.length
+      });
+
     } catch (error) {
-      console.error('Password validation error:', error);
       await conn.rollback();
-      return res.status(500).json({
-        error: "Failed to validate password",
-        errorCode: "VALIDATION_ERROR"
+      console.error("Installation error:", error);
+      res.status(500).json({
+        error: "Installation failed to start",
+        errorCode: "INSTALLATION_FAILED",
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
+    } finally {
+      conn.release();
     }
-
-    // Get apps with valid install commands
-    const [apps] = await conn.query(
-      `SELECT a.id, a.name, a.install_command 
-       FROM list_items li
-       JOIN apps a ON li.app_id = a.id
-       WHERE li.list_id = ? AND a.install_command IS NOT NULL
-       AND JSON_VALID(a.install_command)`,
-      [listId]
-    );
-
-    if (!apps.length) {
-      await conn.rollback();
-      return res.status(400).json({
-        error: "No valid apps to install",
-        errorCode: "NO_VALID_APPS"
-      });
-    }
-
-    // Create installation record
-    const [result] = await conn.query(
-      `INSERT INTO installations 
-       (user_id, device_id, list_id, status, apps_count)
-       VALUES (?, ?, ?, 'pending', ?)`,
-      [req.user.userId, req.headers["x-device-id"], listId, apps.length]
-    );
-
-    await conn.commit();
-
-    // Start installation in background
-    installationManager
-      .startInstallation(result.insertId, apps, sudoPassword)
-      .catch((err) => {
-        console.error("Background installation error:", err);
-        pool.query(
-          'UPDATE installations SET status = ?, error_log = ? WHERE id = ?',
-          ['failed', err.message || 'Installation failed', result.insertId]
-        ).catch(console.error);
-      });
-
-    res.json({
-      success: true,
-      installationId: result.insertId,
-      totalApps: apps.length
-    });
-
-  } catch (error) {
-    await conn.rollback();
-    console.error("Installation error:", error);
-    res.status(500).json({
-      error: "Installation failed to start",
-      errorCode: "INSTALLATION_FAILED",
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  } finally {
-    conn.release();
-  }
-});
+  });
 
 app.get(
   "/api/installations/:id/status",
@@ -1701,7 +1759,7 @@ app.use(async (req, res, next) => {
         );
       }
     } catch (error) {
-      console.error("Device middleware error:", error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -1740,18 +1798,24 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
-// SSL Configuration
-const sslOptions = {
-  key: fs.readFileSync(path.join(__dirname, '../ssl/private.key')),
-  cert: fs.readFileSync(path.join(__dirname, '../ssl/certificate.crt')),
-  ca: fs.readFileSync(path.join(__dirname, '../ssl/ca_bundle.crt')) // If you have a CA bundle
-};
-
-// Create both HTTP and HTTPS servers
+// Create HTTP server
 const httpServer = app.listen(PORT, () => {
   console.log(`HTTP Server running on http://localhost:${PORT}`);
 });
 
-const httpsServer = https.createServer(sslOptions, app).listen(PORT + 1, () => {
-  console.log(`HTTPS Server running on https://localhost:${PORT + 1}`);
-});
+// Only create HTTPS server if SSL files exist
+if (process.env.NODE_ENV === 'production' || process.env.SSL_ENABLED === 'true') {
+  try {
+    const sslOptions = {
+      key: fs.readFileSync(path.join(__dirname, '../ssl/private.key')),
+      cert: fs.readFileSync(path.join(__dirname, '../ssl/certificate.crt')),
+      ca: fs.readFileSync(path.join(__dirname, '../ssl/ca_bundle.crt'))
+    };
+
+    const httpsServer = https.createServer(sslOptions, app).listen(PORT + 1, () => {
+      console.log(`HTTPS Server running on https://localhost:${PORT + 1}`);
+    });
+  } catch (error) {
+    console.warn('SSL files not found, HTTPS server not started');
+  }
+}

@@ -38,7 +38,7 @@ import { ref, onMounted } from 'vue';
 import InvertedButton from '@/comps/InvertedButton.vue';
 import api from '@/api';
 import { useRouter } from 'vue-router';
-import { generateDeviceId, storeDeviceId, getStoredDeviceId } from '@/utils/device';
+import { generateSimpleDeviceId, storeDeviceId, getStoredDeviceId } from '@/utils/device';
 
 const props = defineProps({
   theme: {
@@ -61,28 +61,46 @@ const registerDevice = async () => {
   try {
     isLoading.value = true;
     errorMessage.value = '';
-    const deviceId = getStoredDeviceId() || generateDeviceId();
+    
+    // Get or generate device ID
+    let deviceId = getStoredDeviceId();
+    if (!deviceId) {
+      // Use generateSimpleDeviceId for synchronous operation
+      deviceId = generateSimpleDeviceId();
+      storeDeviceId(deviceId);
+    }
 
-    const response = await api.post('/api/devices/register', {
+    console.log('Attempting device registration with:', {
       deviceId,
       deviceName: deviceName.value,
       platform: platform.value
     });
 
+    const response = await api.post('/api/devices/register', {
+      deviceId,
+      deviceName: deviceName.value || `${platform.value} Device`,
+      platform: platform.value
+    });
+
     if (response.data.success) {
-      storeDeviceId(deviceId);
+      // Store the device ID from the server response if provided
+      if (response.data.details?.deviceId) {
+        storeDeviceId(response.data.details.deviceId);
+      }
       emit('registered', response.data.details);
       router.push('/app-list');
     }
   } catch (error) {
     console.error('Device registration error:', error);
+    console.log('Error response:', error.response?.data);
+    
     if (error.response?.status === 429) {
       errorMessage.value = 'Device limit reached. Please deactivate an existing device first.';
     } else if (error.response?.status === 401) {
       localStorage.removeItem('token');
       router.push('/sign-in');
     } else {
-      errorMessage.value = error.response?.data?.error || 'Failed to register device';
+      errorMessage.value = error.response?.data?.error || 'Failed to register device. Please try again.';
     }
   } finally {
     isLoading.value = false;
@@ -90,27 +108,30 @@ const registerDevice = async () => {
 };
 
 onMounted(async () => {
-  const deviceId = getStoredDeviceId() || generateDeviceId();
+  const deviceId = getStoredDeviceId();
   console.log('DeviceRegistration mounted, deviceId:', deviceId);
   
+  if (!deviceId) {
+    return; // Allow registration if no device ID
+  }
+  
   try {
-    const devicesResponse = await api.get('/api/devices');
-    
-    if (devicesResponse.data.devices.length > 0) {
-      const { data } = await api.get('/api/devices/check', {
-        headers: {
-          'X-Device-ID': deviceId
-        }
-      });
-      
-      console.log('Device check response:', data);
-      
-      if (data.registered) {
-        storeDeviceId(data.deviceId);
-        console.log('Device already registered, redirecting to app list');
-        router.push('/app-list');
-        return;
+    const { data } = await api.get('/api/devices/check', {
+      headers: {
+        'X-Device-ID': deviceId
       }
+    });
+    
+    console.log('Device check response:', data);
+    
+    if (data.registered) {
+      // Update stored device ID if server returns a different one
+      if (data.deviceId && data.deviceId !== deviceId) {
+        storeDeviceId(data.deviceId);
+      }
+      console.log('Device already registered, redirecting to app list');
+      router.push('/app-list');
+      return;
     }
   } catch (error) {
     console.error('Device check failed:', error);

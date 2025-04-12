@@ -111,23 +111,24 @@ class DeviceManager {
     try {
       await conn.beginTransaction();
 
-      const seatAvailability = await this.validateSeatAvailability(userId, conn);
-      if (!seatAvailability.canAddDevice) {
-        throw new Error(`Cannot register device: ${seatAvailability.reason}`);
-      }
-
-      const hardwareId = await this.getHardwareId(deviceInfo.platform);
-      
-      const [existingDevice] = await conn.query(
-        'SELECT id FROM user_devices WHERE user_id = ? AND hardware_id = ?',
-        [userId, hardwareId]
+      // Reset current device flag for all user's devices
+      await conn.query(
+        `UPDATE user_devices 
+         SET is_current = FALSE 
+         WHERE user_id = ?`,
+        [userId]
       );
 
-      let deviceId;
+      const [existingDevice] = await conn.query(
+        'SELECT id FROM user_devices WHERE user_id = ? AND device_id = ?',
+        [userId, deviceInfo.deviceId]
+      );
+
       if (existingDevice.length) {
         await conn.query(
           `UPDATE user_devices 
-           SET is_active = TRUE, 
+           SET is_active = TRUE,
+               is_current = TRUE,
                last_active = CURRENT_TIMESTAMP,
                device_name = ?
            WHERE id = ?`,
@@ -137,9 +138,9 @@ class DeviceManager {
       } else {
         const [result] = await conn.query(
           `INSERT INTO user_devices 
-           (user_id, device_id, device_name, platform, hardware_id)
-           VALUES (?, ?, ?, ?, ?)`,
-          [userId, crypto.randomUUID(), deviceInfo.deviceName, deviceInfo.platform, hardwareId]
+           (user_id, device_id, device_name, platform, is_current)
+           VALUES (?, ?, ?, ?, TRUE)`,
+          [userId, deviceInfo.deviceId, deviceInfo.deviceName, deviceInfo.platform]
         );
         deviceId = result.insertId;
       }

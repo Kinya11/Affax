@@ -126,11 +126,11 @@ const handleRegistrationError = (error) => {
 const handleCredentialResponse = async (response) => {
   try {
     const deviceId = generateDeviceId();
-    storeDeviceId(deviceId);
+    storeDeviceId(deviceId); // Make sure this is called before the API request
 
     const res = await api.post("/api/auth/google-login", {
       id_token: response.credential,
-      deviceId
+      deviceId: deviceId // Make sure deviceId is included in the request
     });
 
     localStorage.setItem("token", res.data.token);

@@ -5,7 +5,12 @@ import { useUserStore } from '../stores/user';
 import api from "@/api";
 import BlueGrayButton from "@/comps/BlueGrayButton.vue";
 import PopupModal from "@/comps/SignInModal.vue";
-import { generateDeviceId, storeDeviceId, getStoredDeviceId } from '@/utils/device';
+import { 
+  generateDeviceId, 
+  generateSimpleDeviceId, 
+  storeDeviceId, 
+  getStoredDeviceId 
+} from '@/utils/device';
 
 const router = useRouter();
 const email = ref("");
@@ -56,13 +61,21 @@ const handleCredentialResponse = async (response) => {
     loading.value = true;
     error.value = '';
     
-    // Get existing deviceId if available
-    const deviceId = getStoredDeviceId();
+    // Generate a simple device ID synchronously
+    const deviceId = generateSimpleDeviceId(); // Use the synchronous version
+    storeDeviceId(deviceId);
+
+    console.log('Sending request with:', {
+      id_token: response.credential,
+      deviceId: deviceId
+    });
 
     const res = await api.post('/api/auth/google-login', {
       id_token: response.credential,
-      deviceId: deviceId || generateDeviceId() // Only generate if no existing deviceId
+      deviceId: deviceId
     });
+
+    console.log('Server response:', res.data);
 
     if (res.data.token) {
       localStorage.setItem('token', res.data.token);
@@ -72,20 +85,18 @@ const handleCredentialResponse = async (response) => {
         userStore.setUser(res.data.user);
       }
 
-      // Only store new deviceId if we didn't have one
-      if (!deviceId && res.data.deviceId) {
-        storeDeviceId(res.data.deviceId);
-      }
-
-      // Only redirect to device registration if explicitly required
-      if (!deviceId && res.data.requiresDeviceRegistration) {
+      if (res.data.requiresDeviceRegistration) {
         router.push({ name: "DeviceRegister" });
       } else {
         router.push({ name: "AppList" });
       }
     }
   } catch (error) {
-    handleAuthError(error);
+    console.error("Authentication error:", error);
+    if (error.response) {
+      console.error("Server error details:", error.response.data);
+    }
+    error.value = error.response?.data?.error || "Authentication failed. Please try again.";
   } finally {
     loading.value = false;
   }

@@ -29,41 +29,31 @@
           </div>
         </div>
 
-        <!-- Active Devices List -->
-        <div class="devices-list">
-          <h3>Active Devices</h3>
-          <div v-if="activeDevices.length === 0" class="no-devices">
-            No active devices found
-          </div>
-          <div v-else>
-            <div v-for="device in activeDevices" :key="device.id" class="device-item">
-              <div class="device-info">
-                <div class="device-header">
-                  <span class="device-name">{{ device.deviceName || 'Unnamed Device' }}</span>
-                  <span v-if="isCurrentDevice(device.deviceId)" class="current-device-badge">Current Device</span>
-                </div>
-                <div class="device-details">
-                  <span class="device-platform">
-                    <i :class="getPlatformIcon(device.platform)"></i>
-                    {{ formatPlatform(device.platform) }}
-                  </span>
-                  <span class="last-active">Last active: {{ formatDate(device.lastActive) }}</span>
-                </div>
+        <!-- Device List -->
+        <div class="device-list">
+          <div v-for="device in activeDevices" :key="device.id" class="device-item">
+            <div class="device-info">
+              <h3>{{ device.deviceName }}</h3>
+              <p>Platform: {{ device.platform }}</p>
+              <p>Last Active: {{ new Date(device.lastActive).toLocaleDateString() }}</p>
+            </div>
+            <div class="device-actions">
+              <div 
+                v-if="isCurrentDevice(device.deviceId)"
+                class="current-device-badge"
+              >
+                Current Device
               </div>
               <button 
-                v-if="!isCurrentDevice(device.deviceId)"
-                @click="deactivateDevice(device.id)"
-                :disabled="device.isDeactivating"
-                :class="['deactivate-btn', { 'deactivating': device.isDeactivating }]"
+                v-else
+                @click="handleDeviceAction(device)"
+                :class="['deactivate-btn', { 
+                  'deactivating': device.isDeactivating
+                }]"
+                :disabled="device.isDeactivating || isCurrentDevice(device.deviceId)"
               >
                 {{ device.isDeactivating ? 'Deactivating...' : 'Deactivate' }}
               </button>
-              <span 
-                v-else 
-                class="current-device-label"
-              >
-                Current Device
-              </span>
             </div>
           </div>
         </div>
@@ -87,7 +77,7 @@ const seatLimit = ref(3);
 const loading = ref(true);
 const error = ref(null);
 const theme = ref('light');
-const currentDeviceId = getStoredDeviceId();
+const currentDeviceId = ref(getStoredDeviceId());
 
 const toggleTheme = (newTheme) => {
   theme.value = newTheme;
@@ -98,94 +88,119 @@ const fetchDevices = async () => {
     loading.value = true;
     error.value = null;
     
-    console.log('Fetching devices...');
-    const response = await api.get('/api/devices');
-    console.log('Device response:', response.data);
+    const deviceId = getStoredDeviceId();
     
-    if (response.data && response.data.devices) {
-      activeDevices.value = response.data.devices.map(device => ({
-        ...device,
-        isDeactivating: false
-      }));
-      seatLimit.value = response.data.seatLimit;
-
-      // Only redirect if there are no devices AND we're not already on the registration page
-      if (activeDevices.value.length === 0 && router.currentRoute.value.path !== '/device-register') {
-        console.log('No devices registered, redirecting to device registration');
-        localStorage.removeItem('deviceId'); // Clear any existing deviceId
-        router.push('/device-register');
-        return;
+    // First verify the current device ID
+    const deviceCheck = await api.get('/api/devices/check', {
+      headers: {
+        'X-Device-ID': deviceId
       }
-    } else {
-      throw new Error('Invalid response format');
+    });
+    
+    // Update current device ID if needed
+    currentDeviceId.value = deviceCheck.data.deviceId || deviceId;
+    console.log('Verified current device ID:', currentDeviceId.value);
+    
+    const response = await api.get('/api/devices', {
+      headers: {
+        'X-Device-ID': currentDeviceId.value
+      }
+    });
+
+    if (response.data && response.data.devices) {
+      activeDevices.value = response.data.devices.map(device => {
+        const deviceId = device.device_id || device.deviceId;
+        const isCurrentDev = isCurrentDevice(deviceId);
+        console.log('Device mapping:', { deviceId, isCurrentDev, currentDeviceId: currentDeviceId.value });
+        return {
+          ...device,
+          isDeactivating: false,
+          deviceId: deviceId,
+          isCurrentDevice: isCurrentDev
+        };
+      });
+      seatLimit.value = response.data.seatLimit;
     }
   } catch (err) {
     console.error('Error fetching devices:', err);
-    error.value = 'Failed to load devices. Please try again later.';
-    toast.error('Error loading devices');
+    error.value = err.response?.data?.error || 'Failed to load devices';
     activeDevices.value = [];
-    
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      router.push('/sign-in');
-    }
   } finally {
     loading.value = false;
   }
 };
 
+const handleDeviceAction = (device) => {
+  // Don't even try to deactivate if it's the current device
+  if (isCurrentDevice(device.deviceId)) {
+    return;
+  }
+  deactivateDevice(device.id);
+};
+
 const deactivateDevice = async (deviceId) => {
+  const device = activeDevices.value.find(d => d.id === deviceId);
+  if (!device) return;
+
+  // Double-check to prevent deactivating current device
+  if (isCurrentDevice(device.deviceId)) {
+    toast.error('Cannot deactivate current device');
+    return;
+  }
+  
   try {
-    const deviceIndex = activeDevices.value.findIndex(d => d.id === deviceId);
-    if (deviceIndex === -1) {
-      toast.error("Device not found");
-      return;
-    }
-
-    const device = activeDevices.value[deviceIndex];
-    const currentDeviceId = localStorage.getItem('deviceId');
-    
-    // Prevent deactivating current device
-    if (device.deviceId === currentDeviceId) {
-      toast.error("Cannot deactivate your current device");
-      return;
-    }
-
     device.isDeactivating = true;
-
+    
     const response = await api.post('/api/devices/deactivate', {
-      id: deviceId
+      id: device.id,
+      deviceId: device.deviceId
     }, {
       headers: {
-        'X-Device-ID': currentDeviceId
+        'X-Device-ID': currentDeviceId.value,
+        'Authorization': `Bearer ${localStorage.getItem('token')}` // Ensure token is sent
       }
     });
     
     if (response.data.success) {
       toast.success('Device deactivated successfully');
       activeDevices.value = activeDevices.value.filter(d => d.id !== deviceId);
-    } else {
-      throw new Error(response.data.error || 'Failed to deactivate device');
     }
   } catch (err) {
     console.error('Error deactivating device:', err);
+    device.isDeactivating = false;
     
-    const deviceIndex = activeDevices.value.findIndex(d => d.id === deviceId);
-    if (deviceIndex !== -1) {
-      activeDevices.value[deviceIndex].isDeactivating = false;
-    }
+    const errorMessage = err.response?.data?.error || 'Failed to deactivate device';
     
-    if (err.response?.data?.code === 'CURRENT_DEVICE') {
-      toast.error("Cannot deactivate your current device");
+    if (err.response?.status === 403) {
+      toast.error('Cannot deactivate current device');
+    } else if (err.response?.status === 404) {
+      toast.error('Device not found');
+      activeDevices.value = activeDevices.value.filter(d => d.id !== deviceId);
+    } else if (err.response?.status === 401) {
+      toast.error('Session expired. Please sign in again.');
+      router.push('/sign-in');
     } else {
-      toast.error(err.response?.data?.error || 'Failed to deactivate device');
+      toast.error(errorMessage);
     }
   }
 };
 
 const isCurrentDevice = (deviceId) => {
-  return deviceId === currentDeviceId;
+  if (!deviceId || !currentDeviceId.value) return false;
+  const normalizedCurrentDevice = currentDeviceId.value.toLowerCase().trim();
+  const normalizedDeviceId = deviceId.toLowerCase().trim();
+  const result = normalizedCurrentDevice === normalizedDeviceId;
+  console.log('Device comparison:', {
+    current: normalizedCurrentDevice,
+    device: normalizedDeviceId,
+    isMatch: result
+  });
+  return result;
 };
+
+onMounted(() => {
+  fetchDevices();
+});
 
 const formatDate = (date) => {
   return new Date(date).toLocaleString();
@@ -319,44 +334,53 @@ onMounted(fetchDevices);
 }
 
 .current-device-badge {
-  background-color: #28a745;
+  background-color: #4CAF50;
   color: white;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.8em;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 500;
+  min-width: 120px;
+  text-align: center;
 }
 
-.current-device-label {
-  padding: 8px 16px;
-  background-color: #28a745;
-  color: white;
-  border-radius: 4px;
-  font-size: 0.9em;
+.device-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 120px;
 }
 
 .deactivate-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  background-color: #dc3545;
+  background-color: #ff4444;
   color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s;
 }
 
-.deactivate-btn:hover:not(:disabled) {
-  background-color: #c82333;
+.deactivate-btn:hover {
+  background-color: #cc0000;
 }
 
 .deactivate-btn:disabled {
-  background-color: #6c757d;
+  background-color: #cccccc;
   cursor: not-allowed;
-  opacity: 0.7;
 }
 
-.deactivate-btn.deactivating {
-  background-color: #6c757d;
+.deactivating {
+  opacity: 0.7;
   cursor: not-allowed;
+}
+
+.deactivate-btn.current-device {
+  background-color: #28a745;
+  cursor: default;
+}
+
+.deactivate-btn.current-device:hover {
+  background-color: #28a745;
 }
 
 .no-devices {

@@ -126,9 +126,16 @@ const startInstallation = async (password: string) => {
     installationError.value = null
     statusMessage.value = 'Starting installation...'
     
+    // Log headers for debugging
+    console.log('Auth token:', localStorage.getItem('token'))
+    console.log('Device ID:', localStorage.getItem('deviceId'))
+    
     const response = await api.post<InstallationResponse>(
       `/api/lists/${props.listId}/install`,
-      { sudoPassword: password }
+      { 
+        sudoPassword: password,
+        deviceId: localStorage.getItem('deviceId') // Explicitly send deviceId
+      }
     )
     
     if (response.data.success && response.data.installationId) {
@@ -145,20 +152,21 @@ const startInstallation = async (password: string) => {
       throw new Error(response.data.error || 'Failed to start installation')
     }
   } catch (error: any) {
-    console.error('Installation error:', error)
+    console.error('Installation error:', error.response?.data || error)
     
-    // Check for specific error codes in the response
-    const errorCode = error.response?.data?.errorCode
-    const errorMessage = error.response?.data?.error
-    
-    if (errorCode === 'INVALID_PASSWORD' || 
-        errorMessage?.includes('Incorrect Password') ||
-        error.response?.status === 403) {
-      handleInstallError(error, 'Incorrect Password')
-    } else {
-      handleInstallError(error, 'Installation failed to start')
+    if (error.response?.status === 403) {
+      if (!localStorage.getItem('deviceId')) {
+        router.push('/device-register')
+        return
+      }
+      
+      if (!localStorage.getItem('token')) {
+        router.push('/sign-in')
+        return
+      }
     }
-    resetState()
+    
+    handleInstallError(error)
   }
 }
 
