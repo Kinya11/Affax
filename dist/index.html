@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/assets/logo-BRTdM_Cg.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Affax</title>
+    <script type="module" crossorigin src="/assets/index-MhNgPpDQ.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BZWGuQU8.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+  <style>:root {
+    /* Main colors (theme) */
+    --dark-gray: #343A40;
+    --light-gray: #E9ECEF;
+    --medium-gray: #CDD4DB;
+    --soft-gray: #B1BBC7;
+    --blue-gray: #2C4C6B;
+    --dark-blue: #1E3F5C;
+    --app-gray: #484848;
+    --error: rgb(197, 11, 11);
+    /* Dark mode colors */
+    --first-layer-dark: #121215;
+    --second-layer-dark: #1A1A1C;
+    --third-layer-dark: #4c4c53;
+    --text-color-dark: #DDDDDD;
+
+    /* Light mode colors */
+    --first-layer-light: #FCFCFF;
+    --second-layer-light: #EBEBEE;
+    --third-layer-light: #C4C4CC;
+    --text-color-light: #000000;
+
+    /* Dynamic variables for components that are used often to not need to declare so many classes */
+    /* Set to light mode values for default */
+    --inverted-button-background: var(--first-layer-light);
+    --inverted-button-border: var(--first-layer-dark);
+    --inverted-button-text: var(--text-color-light);
+    --inverted-button-hover: var(--second-layer-light);
+
+    /* Other stuff */
+    --standard-animation-duration: 0.2s;
+}
+
+    body.light {
+      background-color: var(--first-layer-light);
+    }
+
+    body.dark {
+      background-color: var(--first-layer-dark);
+    }
+  </style>
+</html>

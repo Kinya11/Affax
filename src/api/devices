@@ -1,0 +1,20 @@
+export const generateDeviceId = () => {
+    const components = [
+      navigator.userAgent,
+      navigator.platform,
+      screen.width + 'x' + screen.height,
+      new Date().getTime()
+    ];
+    return btoa(components.join('|')).substring(0, 255);
+  };
+  
+  export const storeDeviceId = (deviceId) => {
+    try {
+      localStorage.setItem('deviceId', deviceId);
+      if (window.sessionStorage) {
+        sessionStorage.setItem('currentDeviceId', deviceId);
+      }
+    } catch (e) {
+      console.error('Device storage failed:', e);
+    }
+  };

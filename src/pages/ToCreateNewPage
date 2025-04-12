@@ -1,0 +1,51 @@
+# Template
+Here is a template for you to copy/paste into your new page's file (make sure to replace everything inside the brackets with the relevant parameters):
+<br>
+```
+<!--
+Go to http://localhost:5173/[your-new-page] to view this page
+-->
+<script setup>
+import Navbar from '@/comps/Navbar/Navbar.vue';
+import { ref } from 'vue';
+
+// Add your scripts here
+
+let theme = ref('light');
+
+function toggleTheme(newTheme) {
+  theme.value = newTheme;
+}
+</script>
+<template>
+  <Navbar @toggle="toggleTheme"/>
+
+  <!-- Add your HTML here -->
+</template>
+
+<script>
+export default {
+  name: '[YourNewPagesName]',
+  props: ["theme"],
+};
+</script>
+
+<style scoped>
+/* Add your styles here */
+</style>
+```
+
+To add theme (example element):
+<br>
+```
+<div :class="theme">
+```
+
+Also, import it to /src/pages/router.tsand copy and maste this into it as well:
+```
+  {
+    path: '/[desired-location-for-new-page]',
+    name: '[WhatYouPutInsideTheExportDefaultName]',
+    component: [TheComponentName],
+  },
+```

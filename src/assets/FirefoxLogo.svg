@@ -1,0 +1,17 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Firefox circle with gradient -->
+  <path d="M45.6 23.2C45.6 35.3 35.7 45.2 23.6 45.2C11.5 45.2 1.60001 35.3 1.60001 23.2C1.60001 11.1 11.5 1.20001 23.6 1.20001C35.7 1.20001 45.6 11.1 45.6 23.2Z" fill="url(#paint0_radial_firefox)"/>
+  <!-- Firefox inner circle with gradient -->
+  <path d="M45.3 23.7C45.3 35.5 35.7 45.2 23.8 45.2C12 45.2 2.29999 35.6 2.29999 23.7C2.29999 11.9 11.9 2.20001 23.8 2.20001C35.6 2.20001 45.3 11.8 45.3 23.7Z" fill="url(#paint1_radial_firefox)"/>
+  <!-- Gradients definitions -->
+  <defs>
+    <radialGradient id="paint0_radial_firefox" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(23.6 23.2) scale(22)">
+      <stop offset="0.1" stop-color="#FF9800"/>
+      <stop offset="0.9" stop-color="#FF5722"/>
+    </radialGradient>
+    <radialGradient id="paint1_radial_firefox" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(23.8 23.7) scale(21.5)">
+      <stop offset="0.1" stop-color="#42A5F5"/>
+      <stop offset="0.9" stop-color="#2196F3"/>
+    </radialGradient>
+  </defs>
+</svg>

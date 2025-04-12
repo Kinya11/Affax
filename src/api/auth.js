@@ -1,0 +1,89 @@
+import api from './index';
+
+const auth = {
+  async login(credentials) {
+    const response = await api.post('/api/auth/login', credentials);
+    if (response.data.token) {
+      localStorage.setItem('token', response.data.token);
+      if (response.data.user) {
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+      }
+    }
+    return response;
+  },
+
+  async logout() {
+    try {
+      const token = this.getToken();
+      if (token) {
+        await api.post('/api/auth/logout', {}, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+      }
+      this.clearAuthData();
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Even if the server request fails, clear local data
+      this.clearAuthData();
+      throw error;
+    }
+  },
+
+  getToken() {
+    return localStorage.getItem('token');
+  },
+
+  clearAuthData() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('deviceId');
+    // Clear any other auth-related data
+    document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+  },
+
+  async verifyToken() {
+    try {
+      const token = this.getToken();
+      if (!token) return false;
+
+      const response = await api.get('/api/auth/verify');
+      return response.data?.valid || false;
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      return false;
+    }
+  },
+
+  async isAuthenticated() {
+    return await this.verifyToken();
+  }
+};
+
+export default auth;
+
+export const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  console.log('Auth attempt:', {
+    hasAuthHeader: !!authHeader,
+    hasToken: !!token,
+    path: req.path
+  });
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      console.log('Token verification failed:', err.message);
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+
+    req.user = user;
+    next();
+  });
+};

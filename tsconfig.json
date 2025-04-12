@@ -1,0 +1,20 @@
+
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext", 
+    "types": ["vite/client"],              // Required for `import.meta`
+    "moduleResolution": "node",
+    "allowJs": true,                   // Allow importing .js files
+    "esModuleInterop": true,           // Fixes CommonJS/ES module interop
+    "strict": true,
+    "noEmit": true,  
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@backend/*": ["backend/*"]      // Optional: Alias for backend/
+    },          // For `import.meta.env`
+  },
+  "include": ["src/**/*", "backend/**/*"],
+  "exclude": ["node_modules"]
+}

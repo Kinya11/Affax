@@ -1,0 +1,1 @@
+import{_ as t,a as n,o,l as s}from"./index-MhNgPpDQ.js";const r={},c={class:"inverted-button"};function a(e,_){return o(),n("button",c,[s(e.$slots,"default",{},void 0,!0)])}const l=t(r,[["render",a],["__scopeId","data-v-e173c3a1"]]);export{l as I};

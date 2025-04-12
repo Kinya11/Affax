@@ -1,0 +1,6 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background rectangle with rounded corners -->
+  <rect width="48" height="48" rx="8" fill="#1976D2"/>
+  <!-- Play triangle -->
+  <path d="M16 14V34L36 24L16 14Z" fill="white"/>
+</svg>

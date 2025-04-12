@@ -1,0 +1,1 @@
+import{_ as t,a as o,o as a,l as n}from"./index-MhNgPpDQ.js";const s={},r={class:"blue-gray-button"};function c(e,_){return a(),o("button",r,[n(e.$slots,"default",{},void 0,!0)])}const u=t(s,[["render",c],["__scopeId","data-v-4aa7285e"]]);export{u as B};
