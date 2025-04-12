@@ -1,81 +1,131 @@
 <script setup>
-import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { useUserStore } from '../stores/user';
-import api from "@/api";
+import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { useUserStore } from '@/stores/user';
+import api from '@/api';
+import { generateDeviceId, storeDeviceId } from '@/utils/device';
 import BlueGrayButton from "@/comps/BlueGrayButton.vue";
-import PopupModal from "@/comps/SignInModal.vue";
-import { 
-  generateDeviceId, 
-  generateSimpleDeviceId, 
-  storeDeviceId, 
-  getStoredDeviceId 
-} from '@/utils/device';
+import PricingBackground from '@/comps/PricingBackground.vue';
+import PopupModal from '@/comps/SignInModal.vue';
 
 const router = useRouter();
+const userStore = useUserStore();
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const error = ref("");
 const showPopup = ref(false);
-const userStore = useUserStore();
+const googleSignInBtn = ref(null);
 
-// Initialize Google Sign-In
-const initializeGoogleAuth = async () => {
-  console.log('Initializing Google Auth...');
-  
-  if (!import.meta.env.VITE_GOOGLE_CLIENT_ID) {
-    console.error('Google Client ID not found in environment variables');
+const onSignIn = async () => {
+  if (!email.value || !password.value) {
+    error.value = "Please enter both email and password";
     return;
   }
 
+  loading.value = true;
+  error.value = "";
+
   try {
-    // Wait for the Google API to load
+    const deviceId = generateDeviceId();
+    storeDeviceId(deviceId);
+
+    const response = await api.post("/api/auth/login", {
+      email: email.value,
+      password: password.value,
+      deviceId: deviceId
+    });
+
+    if (response.data.token) {
+      localStorage.setItem('token', response.data.token);
+      
+      if (response.data.user) {
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        userStore.setUser(response.data.user);
+      }
+
+      if (response.data.requiresDeviceRegistration) {
+        router.push({ name: "DeviceRegister" });
+      } else {
+        router.push({ name: "AppList" });
+      }
+    }
+  } catch (error) {
+    console.error("Sign-in error:", error);
+    if (error.response?.status === 404) {
+      showPopup.value = true;
+    } else {
+      error.value = error.response?.data?.error || "Authentication failed";
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+const initializeGoogleAuth = async () => {
+  try {
     await new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
+      if (window.google) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
       script.onload = resolve;
       document.head.appendChild(script);
     });
 
-    // Initialize Google Sign-In
-    window.google.accounts.id.initialize({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      callback: handleCredentialResponse,
+    // Wait for the button element to be available
+    await new Promise((resolve) => {
+      const checkButton = () => {
+        const buttonElement = document.getElementById("googleSignInDiv");
+        if (buttonElement) {
+          resolve();
+        } else {
+          setTimeout(checkButton, 100);
+        }
+      };
+      checkButton();
     });
 
-    // Render the button
-    window.google.accounts.id.renderButton(
-      document.getElementById('googleSignInDiv'),
-      { theme: 'outline', size: 'large', width: 250 }
-    );
+    window.google.accounts.id.initialize({
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      callback: handleCredentialResponse
+    });
 
-    console.log('Google Auth initialized successfully');
+    window.google.accounts.id.renderButton(
+      document.getElementById("googleSignInDiv"),
+      { 
+        theme: "filled_black", 
+        size: "large", 
+        width: "300",
+        text: "signin_with",
+        shape: "rectangular"
+      }
+    );
   } catch (error) {
-    console.error('Failed to initialize Google Auth:', error);
+    console.error("Failed to initialize Google Auth:", error);
+    error.value = "Failed to initialize Google Sign-In";
   }
 };
 
 const handleCredentialResponse = async (response) => {
   try {
-    loading.value = true;
-    error.value = '';
-    
-    // Generate a simple device ID synchronously
-    const deviceId = generateSimpleDeviceId(); // Use the synchronous version
+    const deviceId = await generateDeviceId(); // Make sure we await the device ID
     storeDeviceId(deviceId);
 
-    console.log('Sending request with:', {
-      id_token: response.credential,
+    console.log("Sending request with:", {
+      credential: !!response.credential,
       deviceId: deviceId
     });
 
-    const res = await api.post('/api/auth/google-login', {
+    const res = await api.post("/api/auth/google-login", {
       id_token: response.credential,
-      deviceId: deviceId
+      deviceId: deviceId.toString() // Ensure deviceId is a string
     });
-
-    console.log('Server response:', res.data);
 
     if (res.data.token) {
       localStorage.setItem('token', res.data.token);
@@ -92,88 +142,26 @@ const handleCredentialResponse = async (response) => {
       }
     }
   } catch (error) {
-    console.error("Authentication error:", error);
-    if (error.response) {
-      console.error("Server error details:", error.response.data);
-    }
-    error.value = error.response?.data?.error || "Authentication failed. Please try again.";
-  } finally {
-    loading.value = false;
-  }
-};
-
-onMounted(() => {
-  console.log('SignIn component mounted');
-  initializeGoogleAuth();
-});
-
-const handleSuccessfulLogin = (response) => {
-  localStorage.setItem('token', response.data.token);
-  
-  if (response.data.user) {
-    localStorage.setItem('user', JSON.stringify(response.data.user));
-    userStore.setUser(response.data.user);
-  }
-
-  // Don't set deviceId here - let device registration handle it
-  if (response.data.requiresDeviceRegistration) {
-    router.push('/device-register');
-  } else {
-    const deviceId = localStorage.getItem('deviceId');
-    if (!deviceId) {
-      router.push('/device-register');
-    } else {
-      router.push('/app-list');
-    }
-  }
-};
-
-const onSignIn = async () => {
-  try {
-    loading.value = true;
-    error.value = '';
-    
-    const response = await api.post('/api/auth/login', {
-      email: email.value,
-      password: password.value
+    console.error("Google sign-in error details:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
     });
-
-    handleSuccessfulLogin(response);
-  } catch (error) {
-    handleAuthError(error);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const handleAuthError = (err) => {
-  console.error("Authentication error:", err);
-  
-  if (err.response) {
-    switch (err.response.status) {
-      case 400:
-        error.value = "Invalid request format";
-        break;
-      case 401:
-        error.value = "Invalid email or password";
-        break;
-      case 404:
-        error.value = "User not found";
-        break;
-      case 500:
-        error.value = "Server error. Please try again later";
-        break;
-      default:
-        error.value = "An error occurred. Please try again.";
-    }
-  } else {
-    error.value = "Network error. Please check your connection";
+    error.value = error.response?.data?.error || "Google sign-in failed. Please try again.";
   }
 };
 
 const onSignUp = () => {
   router.push({ name: "SignUp" });
 };
+
+onMounted(() => {
+  console.log('SignIn component mounted');
+  // Add a small delay to ensure DOM is ready
+  setTimeout(() => {
+    initializeGoogleAuth();
+  }, 100);
+});
 </script>
 
 <template>
@@ -181,13 +169,7 @@ const onSignUp = () => {
   <nav>
     <img class="Logo" src="@/assets/logo.svg" alt="append logo" width="40px" />
     <div class="nav-element" id="nav-center"></div>
-    <span class="nav-element-container">
-      <div class="dropdown-actuator">
-        <span @click="onSignUp" class="nav-element" id="sign-up">
-          Sign Up
-        </span>
-      </div>
-    </span>
+    <span @click="onSignUp" class="nav-element" id="sign-up">Create Account</span>
   </nav>
 
   <div class="sign-in-page">
@@ -232,7 +214,7 @@ const onSignUp = () => {
         <img src="/src/assets/Line.svg" alt="line" />
       </div>
       
-      <div id="googleSignInDiv" class="google-sign-in-button"></div>
+      <div id="googleSignInDiv" ref="googleSignInBtn" class="google-sign-in-button"></div>
     </div>
     
     <PopupModal
@@ -271,7 +253,8 @@ const onSignUp = () => {
 
 #sign-up {
   cursor: pointer;
-  margin-left: 89vw;
+  white-space: nowrap; /* Ensures text stays on one line */
+  margin-right: 20px; /* Add some margin from the right edge */
 }
 
 /* Basic styling for nav */
@@ -303,21 +286,34 @@ const onSignUp = () => {
 nav {
   display: flex;
   align-items: center;
+  justify-content: space-between; /* Helps with spacing */
   position: fixed;
   top: 10px;
   left: 0.25%;
   right: 1%;
   width: 98%;
   border-radius: 8px;
-  padding: 10px;
+  padding: 12px 20px; /* Adjusted from 15px to 12px vertical padding */
   box-shadow: #0000003b 0px 4px 4px;
   z-index: 10000;
   backdrop-filter: blur(10px);
   background-color: rgba(255, 255, 255, 0.5);
+  height: 35px; /* Adjusted from 45px to 35px */
 }
 
 .Logo {
   width: 40px;
+  height: 35px; /* Adjusted from 40px to 35px */
+  object-fit: contain;
+}
+
+#nav-center {
+  flex: 1;
+}
+
+.nav-element {
+  font-size: 14px;
+  color: #000;
 }
 
 .sign-in-page {
@@ -433,8 +429,10 @@ nav {
 
 .google-sign-in-button {
   margin-top: 20px;
+  min-height: 40px; /* Add minimum height to prevent layout shift */
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 .error-message {

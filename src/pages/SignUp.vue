@@ -1,12 +1,25 @@
 <script setup>
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import api from '@/api';
 import { useToast } from 'vue-toastification';
 import { generateDeviceId, storeDeviceId, getStoredDeviceId } from '@/utils/device';
+import PricingBackground from '@/comps/PricingBackground.vue';
 
 const router = useRouter();
 const toast = useToast();
+const pageVisible = ref(false);
+
+const onSignIn = () => {
+  pageVisible.value = false;
+  setTimeout(() => {
+    router.push('/sign-in');
+  }, 600); // Match the animation duration
+};
+
+onMounted(() => {
+  pageVisible.value = true;
+});
 
 // Form data with validation states
 const formData = reactive({
@@ -14,48 +27,71 @@ const formData = reactive({
   lastName: "",
   email: "",
   password: "",
-  dateOfBirth: "",
   careerField: "",
+  dateOfBirth: "",
   agreeToTerms: false,
   receiveEmails: false
 });
 
 const validation = reactive({
   isEmailValid: false,
-  isPasswordValid: false,
-  isAdult: false
+  isPasswordValid: false
 });
 
 const loading = ref(false);
 const errorMessage = ref("");
 
+// Password validation computed properties
+const hasMinLength = computed(() => formData.password.length >= 8);
+const hasNumber = computed(() => /\d/.test(formData.password));
+const hasSpecialChar = computed(() => /[!@#$%^&*]/.test(formData.password));
+const hasUpperCase = computed(() => /[A-Z]/.test(formData.password));
+
+const showPasswordRequirements = ref(false);
+
 // Enhanced validation
 const validateForm = () => {
   errorMessage.value = "";
+  
+  // Email validation with better regex
+  const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  validation.isEmailValid = emailRegex.test(formData.email);
 
-  // Email validation
-  validation.isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email);
-
-  // Password validation (min 8 chars, 1 number, 1 special char)
-  validation.isPasswordValid = 
-    formData.password.length >= 8 &&
-    /\d/.test(formData.password) &&
-    /[!@#$%^&*]/.test(formData.password);
+  // Password validation (min 8 chars, 1 number, 1 special char, 1 uppercase)
+  const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
+  validation.isPasswordValid = passwordRegex.test(formData.password);
 
   // Age validation (minimum 13 years old)
   if (formData.dateOfBirth) {
     const birthDate = new Date(formData.dateOfBirth);
-    const ageDifMs = Date.now() - birthDate.getTime();
-    const ageDate = new Date(ageDifMs);
-    validation.isAdult = Math.abs(ageDate.getUTCFullYear() - 1970) >= 13;
+    const today = new Date();
+    const age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    
+    validation.isAdult = age > 13 || (age === 13 && monthDiff >= 0);
   }
 
-  return (
-    validation.isEmailValid &&
-    validation.isPasswordValid &&
-    validation.isAdult &&
-    formData.agreeToTerms
-  );
+  if (!validation.isEmailValid) {
+    errorMessage.value = "Please enter a valid email address";
+    return false;
+  }
+
+  if (!validation.isPasswordValid) {
+    errorMessage.value = "Password must be at least 8 characters long and contain at least one uppercase letter, one number, and one special character";
+    return false;
+  }
+
+  if (!validation.isAdult) {
+    errorMessage.value = "You must be at least 13 years old to register";
+    return false;
+  }
+
+  if (!formData.agreeToTerms) {
+    errorMessage.value = "You must agree to the terms and conditions";
+    return false;
+  }
+
+  return true;
 };
 
 const onFormSubmit = async () => {
@@ -76,7 +112,6 @@ const onFormSubmit = async () => {
       lastName: formData.lastName,
       email: formData.email,
       password: formData.password,
-      dateOfBirth: formData.dateOfBirth,
       careerField: formData.careerField,
       receiveEmails: formData.receiveEmails,
       deviceId
@@ -174,7 +209,8 @@ const loadGoogleScript = async (retries = 3) => {
   }
 };
 
-onMounted(async () => {
+// Enhanced Google Sign-In initialization
+const initializeGoogleSignIn = async () => {
   try {
     await loadGoogleScript();
     
@@ -189,246 +225,151 @@ onMounted(async () => {
         auto_select: false
       });
 
-      window.google.accounts.id.renderButton(
-        document.getElementById("google-signin-btn"),
-        { 
+      const buttonElement = document.getElementById("google-signin-btn");
+      if (buttonElement) {
+        window.google.accounts.id.renderButton(buttonElement, { 
           theme: "filled_black", 
-          size: "large", 
-          width: "300",
+          size: "large",
+          width: 300,
+          text: "continue_with",
           logo_alignment: "center"
-        }
-      );
+        });
+      }
     }
   } catch (error) {
     console.error("Google Sign-In initialization failed:", error);
     errorMessage.value = "Google Sign-In is currently unavailable";
   }
+};
+
+onMounted(() => {
+  initializeGoogleSignIn();
 });
 </script>
 
 <template>
-  <img src="../assets/PurpleBackground.png" class="wallpaper" />
-  <nav>
-    <img class="Logo" src="@/assets/logo.svg" alt="append logo" width="40px" />
-    <div class="nav-element" id="nav-center"></div>
-    <span class="nav-element-container">
-      <div class="dropdown-actuator">
-        <span class="nav-element" id="sign-in" @click="onSignIn">
-          Sign In
-        </span>
+  <PricingBackground styleType="particles">
+    <nav>
+      <div class="logo-container" @click="router.push('/')">
+        <img class="Logo" src="@/assets/logo.svg" alt="append logo" />
       </div>
-    </span>
-  </nav>
-  <div class="sign-in-page">
-    <div class="form-container">
-      <h1>Complete Your Account Setup</h1>
-      <p>
-        Please make sure all information entered below is accurate and complete,
-        as outlined in the terms of service.
-      </p>
-      <form @submit.prevent="onFormSubmit">
-        <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
-        <div class="form-row">
-          <input
-            class="form-input"
-            v-model="formData.email"
-            type="email"
-            placeholder="Email Address"
-            required
-          />
-          <input
-            class="form-input"
-            v-model="formData.password"
-            type="password"
-            placeholder="Password"
-            required
-          />
-        </div>
+      <div class="nav-element" id="nav-center"></div>
+      <span class="nav-element nav-link" id="sign-in" @click="onSignIn">
+        Sign In
+      </span>
+    </nav>
+    <div class="sign-in-page" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
+      <div class="form-container">
+        <h1 id="setup-title">Create Your Account</h1>
+        <p class="setup-description">
+          Please make sure all information entered below is accurate and complete,
+          as outlined in the terms of service.
+        </p>
+        <form @submit.prevent="onFormSubmit">
+          <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
+          
+          <!-- Input Fields -->
+          <div class="input-group">
+            <div class="form-row">
+              <input
+                class="form-input"
+                v-model="formData.email"
+                type="email"
+                placeholder="Email Address"
+                required
+              />
+              <input
+                class="form-input"
+                v-model="formData.password"
+                type="password"
+                placeholder="Password"
+                required
+                @focus="showPasswordRequirements = true"
+                @blur="showPasswordRequirements = false"
+              />
+            </div>
 
-        <div class="form-row">
-          <input
-            class="form-input"
-            v-model="formData.firstName"
-            type="text"
-            placeholder="Legal First Name"
-            required
-          />
-          <input
-            class="form-input"
-            v-model="formData.lastName"
-            type="text"
-            placeholder="Legal Last Name"
-            required
-          />
-        </div>
-        <div class="form-row">
-          <input
-            class="form-input"
-            v-model="formData.dateOfBirth"
-            type="date"
-            placeholder="Date of Birth"
-            required
-          />
-          <input
-            class="form-input"
-            v-model="formData.careerField"
-            type="text"
-            placeholder="Career Field/Industry (Optional)"
-          />
-        </div>
-        <div class="form-checkbox">
-          <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
-          <label for="agreeToTerms"
-            >I hereby acknowledge that I have read and agree with the Append
-            privacy policy and terms of service.</label
-          >
-        </div>
-        <div class="form-checkbox">
-          <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
-          <label for="receiveEmails"
-            >I would like to receive emails from Append that may include
-            promotions, updates, and sponsorships.</label
-          >
-        </div>
-        <button id="create-account-button" type="submit" :disabled="loading">
-          <span v-if="loading">Loading...</span>
-          <span v-else>Create Account</span>
-        </button>
-      </form>
-      <div id="google-signin-btn"></div>
+            <div class="form-row">
+              <input
+                class="form-input"
+                v-model="formData.firstName"
+                type="text"
+                placeholder="Legal First Name"
+                required
+              />
+              <input
+                class="form-input"
+                v-model="formData.lastName"
+                type="text"
+                placeholder="Legal Last Name"
+                required
+              />
+            </div>
+
+            <div class="form-row">
+              <input
+                class="form-input"
+                v-model="formData.careerField"
+                type="text"
+                placeholder="Career Field/Industry (Optional)"
+              />
+              <input
+                class="form-input"
+                v-model="formData.dateOfBirth"
+                type="date"
+                placeholder="Date of Birth"
+                required
+              />
+            </div>
+          </div>
+
+          <!-- Checkboxes -->
+          <div class="checkbox-group">
+            <div class="form-checkbox">
+              <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
+              <label for="agreeToTerms">
+                I hereby acknowledge that I have read and agree with the Append
+                privacy policy and terms of service.
+              </label>
+            </div>
+            <div class="form-checkbox">
+              <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
+              <label for="receiveEmails">
+                I would like to receive emails from Append that may include
+                promotions, updates, and sponsorships.
+              </label>
+            </div>
+          </div>
+
+          <div class="buttons-container">
+            <!-- Sign Up Button -->
+            <button 
+              id="create-account-button" 
+              type="submit" 
+              :disabled="loading"
+              class="primary-button"
+            >
+              <span v-if="loading">Loading...</span>
+              <span v-else>Create Account</span>
+            </button>
+
+            <!-- Or Divider -->
+            <div class="or-divider">
+              <div class="line"></div>
+              <span>or</span>
+              <div class="line"></div>
+            </div>
+
+            <!-- Google Sign In -->
+            <div id="google-signin-btn" class="google-button-container"></div>
+          </div>
+        </form>
+      </div>
     </div>
-  </div>
+  </PricingBackground>
 </template>
 
 <style scoped>
-.error-message {
-  color: red;
-  margin-bottom: 15px;
-}
-
-#google-signin-btn {
-  display: flex;
-  margin-top: 20px;
-  justify-content: center;
-}
-
-.wallpaper {
-  width: 100%;
-  height: 100vh;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  object-fit: cover;
-}
-
-.fade-out {
-  animation: fadeOut 0.6s forwards;
-}
-
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-#sign-in {
-  cursor: pointer;
-  margin-left: 89.5vw;
-}
-
-.form-container {
-  width: 50%;
-  height: 37vw;
-  margin: 100px auto;
-  text-align: center;
-  margin-left: calc(50% - 25%);
-  padding: 20px;
-  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
-  background-color: #ffffff;
-  backdrop-filter: blur(10px);
-  background-color: rgba(255, 255, 255, 0.5);
-  position: relative; /* Change from fixed to relative */
-  border-color: black;
-  border-width: 1px;
-  border-style: solid;
-}
-
-.form-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-  gap: 20px;
-}
-
-.form-input {
-  width: 48%;
-  padding: 10px;
-  font-size: 16px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-}
-
-.form-checkbox {
-  text-align: left;
-  margin: 10px;
-}
-
-button {
-  padding: 10px 20px;
-  font-size: 16px;
-  color: white;
-  background-color: #6c63ff;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-button:hover {
-  background-color: #5953c3;
-}
-
-.nav-dropdown {
-  display: none;
-}
-
-.sign-up-page {
-  height: fit-content;
-  overflow: hidden;
-}
-
-.nav-element:hover {
-  text-decoration: underline;
-  text-decoration-color: #000f;
-}
-
-.nav-element-container {
-  display: block;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 10px;
-  padding-left: 0px;
-  padding-right: 0px;
-  border-style: solid;
-  border-color: transparent;
-  border-width: 1px;
-  transition-duration: var(--standard-animation-duration);
-}
-
-.nav-element {
-  display: inline-flex;
-  gap: 5px;
-  font-weight: 300;
-  transition-duration: var(--standard-animation-duration);
-  text-decoration: underline;
-  text-decoration-color: #0000;
-}
-
 nav {
   display: flex;
   align-items: center;
@@ -441,33 +382,250 @@ nav {
   border-width: 1px;
   border-radius: 5px;
   padding: 10px;
-  box-shadow: #0000003b 0px 4px 4px;
   z-index: 10000;
-  backdrop-filter: blur(5px);
+  backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  font-size: 20px;
-  transition-duration: 0.2s;
-  transition-timing-function: ease;
   background-color: rgba(255, 255, 255, 0.5);
   border-color: black;
+  height: 35px;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  height: 35px;
+}
+
+.logo-container:hover {
+  opacity: 0.8;
 }
 
 .Logo {
-  width: 40px;
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+  filter: brightness(0); /* This makes the logo black */
 }
 
-#create-account-button {
-  position: absolute; /* Position the button absolutely within the container */
-  bottom: 80px; /* Adjust this value to fine-tune the button's distance from the bottom */
-  left: 50%;
-  transform: translateX(-50%); /* Center the button horizontally */
-  padding: 10px 20px;
-  font-size: 16px;
+#setup-title {
+  color: #000;
+  font-size: 30px;
+  margin-bottom: 15px;
+  font-weight: 700;
+}
+
+#nav-center {
+  flex: 1;
+}
+
+.nav-element {
+  font-size: 14px;
+  color: #000;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+#sign-in {
+  font-weight: 300;
+  padding: 8px 16px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.nav-link {
+  text-decoration: none;
+  position: relative;
+  font-weight: 300;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 1px;
+  bottom: -2px;
+  left: 0;
+  background-color: #000;
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.3s ease;
+}
+
+.nav-link:hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+/* Page transition animations */
+.fade-in {
+  animation: fadeIn 0.6s forwards;
+}
+
+.fade-out {
+  animation: fadeOut 0.6s forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+.form-container {
+  width: 45%;
+  min-height: fit-content;
+  margin: 80px auto;
+  text-align: center;
+  padding: 35px;
+  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+  background-color: white;
+  border-radius: 10px;
+  border: 1px solid black;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.form-row {
+  display: flex;
+  gap: 15px;
+  width: 100%;
+}
+
+.form-input {
+  flex: 1;
+  height: 30px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #545454;
+  border-radius: 8px;
+  transition: border-color 0.2s ease;
+}
+
+h1 {
+  color: #000;
+  font-size: 24px;
+  margin-bottom: 15px;
+  font-weight: 500;
+}
+
+.setup-description {
+  margin-bottom: 25px;
+  color: #666;
+  font-size: 14px;
+}
+
+.buttons-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  margin-top: 25px;
+}
+
+.primary-button {
+  width: 55%;
+  height: 40px;
+  background-color: var(--blue-gray);
   color: white;
-  background-color: #6c63ff;
   border: none;
   border-radius: 5px;
+  font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  width: 70%; /* Adjust this to control button width */
+  transition: background-color 0.2s ease;
+}
+
+.or-divider {
+  width: 55%;
+  display: flex;
+  align-items: center;
+  margin: 20px 0;
+}
+
+.or-divider .line {
+  flex: 1;
+  height: 1px;
+  background-color: #000;
+}
+
+.or-divider span {
+  padding: 0 15px;
+  color: #000;
+  font-size: 14px;
+}
+
+.google-button-container {
+  width: 55%;
+  margin-left: calc(50% - 27.5%);
+}
+
+.checkbox-group {
+  margin: 20px 0;
+}
+
+.form-checkbox {
+  text-align: left;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.form-checkbox label {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #444;
+}
+
+/* Ensure no overflow */
+.sign-in-page {
+  min-height: 100vh;
+  padding: 0 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* Date input specific styling */
+input[type="date"] {
+  flex: 1;
+  padding: 8px 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: white;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
+/* Error message styling */
+.error-message {
+  color: var(--error);
+  font-size: 13px;
+  margin: 8px 0;
 }
 </style>

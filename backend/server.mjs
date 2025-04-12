@@ -740,6 +740,8 @@ app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
       return res.status(409).json({ error: "Email already registered" });
     }
 
+    // Removed age validation check
+
     const hashedPassword = await argon2.hash(password);
 
     const [result] = await pool.query(
@@ -833,6 +835,8 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.post("/api/auth/google-login", async (req, res) => {
+  const connection = await pool.getConnection();
+  
   try {
     console.log("Received google-login request:", {
       hasIdToken: !!req.body.id_token,
@@ -844,13 +848,16 @@ app.post("/api/auth/google-login", async (req, res) => {
       return res.status(400).json({ error: "Missing ID token" });
     }
 
-    if (!req.body.deviceId) {
-      return res.status(400).json({ error: "Missing device ID" });
+    if (!req.body.deviceId || typeof req.body.deviceId !== 'string') {
+      return res.status(400).json({ error: "Invalid device ID format" });
     }
+
+    await connection.beginTransaction();
 
     // Verify the token
     let ticket;
     try {
+      const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
       ticket = await client.verifyIdToken({
         idToken: req.body.id_token,
         audience: process.env.GOOGLE_CLIENT_ID,
@@ -865,96 +872,73 @@ app.post("/api/auth/google-login", async (req, res) => {
       email: payload.email,
       sub: payload.sub
     });
-    
-    if (!payload?.email) {
-      return res.status(400).json({ error: "Email not provided in Google payload" });
-    }
 
-    // Find or create user
-    let user;
-    try {
-      const [users] = await pool.query(
-        "SELECT * FROM users WHERE email = ?",
-        [payload.email]
+    // Check if user exists
+    let [users] = await connection.query(
+      "SELECT * FROM users WHERE email = ?",
+      [payload.email]
+    );
+    let user = users[0];
+
+    // If user doesn't exist, create one
+    if (!user) {
+      const [result] = await connection.query(
+        `INSERT INTO users (email, first_name, last_name, google_id) 
+         VALUES (?, ?, ?, ?)`,
+        [
+          payload.email,
+          payload.given_name || '',
+          payload.family_name || '',
+          payload.sub
+        ]
       );
 
+      [users] = await connection.query(
+        "SELECT * FROM users WHERE user_id = ?",
+        [result.insertId]
+      );
       user = users[0];
-
-      if (!user) {
-        console.log("Creating new user for:", payload.email);
-        const [result] = await pool.query(
-          `INSERT INTO users (
-            email, 
-            first_name, 
-            last_name, 
-            google_id,
-            created_at
-          ) VALUES (?, ?, ?, ?, NOW())`,
-          [
-            payload.email,
-            payload.given_name || '',
-            payload.family_name || '',
-            payload.sub
-          ]
-        );
-        
-        user = {
-          user_id: result.insertId,
-          email: payload.email,
-          first_name: payload.given_name,
-          last_name: payload.family_name,
-          google_id: payload.sub,
-          is_admin: false
-        };
-      }
-
-      // Check device registration status
-      const [devices] = await pool.query(
-        `SELECT id FROM devices 
-         WHERE user_id = ? 
-         AND device_id = ? 
-         AND is_active = TRUE`,
-        [user.user_id, req.body.deviceId]
-      );
-
-      const requiresDeviceRegistration = devices.length === 0;
-
-      const token = jwt.sign(
-        { 
-          userId: user.user_id,
-          isAdmin: user.is_admin || false
-        }, 
-        process.env.JWT_SECRET, 
-        { expiresIn: "1h" }
-      );
-
-      return res.json({
-        token,
-        expires_in: 3600,
-        user: {
-          id: user.user_id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name,
-          isAdmin: user.is_admin || false
-        },
-        requiresDeviceRegistration
-      });
-
-    } catch (dbError) {
-      console.error("Database error:", dbError);
-      return res.status(500).json({
-        error: "Database operation failed",
-        details: process.env.NODE_ENV === "development" ? dbError.message : undefined
-      });
     }
+
+    // Check if device exists and is active
+    const [devices] = await connection.query(
+      "SELECT id FROM devices WHERE user_id = ? AND device_id = ? AND is_active = TRUE",
+      [user.user_id, req.body.deviceId]
+    );
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.user_id,
+        email: user.email
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    await connection.commit();
+
+    // Return success response
+    res.json({
+      token,
+      user: {
+        id: user.user_id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name
+      },
+      requiresDeviceRegistration: devices.length === 0
+    });
 
   } catch (error) {
+    await connection.rollback();
     console.error("Google login error:", error);
-    return res.status(500).json({
-      error: "Authentication failed",
-      details: process.env.NODE_ENV === "development" ? error.message : undefined
+    res.status(500).json({ 
+      error: "Internal server error during Google login",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  } finally {
+    connection.release();
   }
 });
 
