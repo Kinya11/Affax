@@ -248,127 +248,129 @@ onMounted(() => {
 </script>
 
 <template>
-  <PricingBackground styleType="particles">
-    <nav>
-      <div class="logo-container" @click="router.push('/')">
-        <img class="Logo" src="@/assets/logo.svg" alt="append logo" />
+  <div class="sign-up-wrapper">
+    <PricingBackground styleType="particles">
+      <nav>
+        <div class="logo-container" @click="router.push('/')">
+          <img class="Logo" src="@/assets/logo.svg" alt="append logo" />
+        </div>
+        <div class="nav-element" id="nav-center"></div>
+        <div class="nav-right">
+          <span class="nav-element nav-link" id="sign-in" @click="onSignIn">
+            Sign In
+          </span>
+        </div>
+      </nav>
+      <div class="sign-up-page" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
+        <div class="form-container">
+          <h1 id="setup-title">Create Your Account</h1>
+          <p class="setup-description">
+            Please make sure all information entered below is accurate and complete,
+            as outlined in the terms of service.
+          </p>
+          <form @submit.prevent="onFormSubmit">
+            <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
+            
+            <!-- Input Fields -->
+            <div class="input-group">
+              <div class="form-row">
+                <input
+                  class="form-input"
+                  v-model="formData.email"
+                  type="email"
+                  placeholder="Email Address"
+                  required
+                />
+                <input
+                  class="form-input"
+                  v-model="formData.password"
+                  type="password"
+                  placeholder="Password"
+                  required
+                  @focus="showPasswordRequirements = true"
+                  @blur="showPasswordRequirements = false"
+                />
+              </div>
+
+              <div class="form-row">
+                <input
+                  class="form-input"
+                  v-model="formData.firstName"
+                  type="text"
+                  placeholder="Legal First Name"
+                  required
+                />
+                <input
+                  class="form-input"
+                  v-model="formData.lastName"
+                  type="text"
+                  placeholder="Legal Last Name"
+                  required
+                />
+              </div>
+
+              <div class="form-row">
+                <input
+                  class="form-input"
+                  v-model="formData.careerField"
+                  type="text"
+                  placeholder="Career Field/Industry (Optional)"
+                />
+                <input
+                  class="form-input"
+                  v-model="formData.dateOfBirth"
+                  type="date"
+                  placeholder="Date of Birth"
+                  required
+                />
+              </div>
+            </div>
+
+            <!-- Checkboxes -->
+            <div class="checkbox-group">
+              <div class="form-checkbox">
+                <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
+                <label for="agreeToTerms">
+                  I hereby acknowledge that I have read and agree with the Append
+                  privacy policy and terms of service.
+                </label>
+              </div>
+              <div class="form-checkbox">
+                <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
+                <label for="receiveEmails">
+                  I would like to receive emails from Append that may include
+                  promotions, updates, and sponsorships.
+                </label>
+              </div>
+            </div>
+
+            <div class="buttons-container">
+              <!-- Sign Up Button -->
+              <button 
+                id="create-account-button" 
+                type="submit" 
+                :disabled="loading"
+                class="primary-button"
+              >
+                <span v-if="loading">Loading...</span>
+                <span v-else>Create Account</span>
+              </button>
+
+              <!-- Or Divider -->
+              <div class="or-divider">
+                <div class="line"></div>
+                <span>Or</span>
+                <div class="line"></div>
+              </div>
+
+              <!-- Google Sign In -->
+              <div id="google-signin-btn" class="google-button-container"></div>
+            </div>
+          </form>
+        </div>
       </div>
-      <div class="nav-element" id="nav-center"></div>
-      <div class="nav-right">
-        <span class="nav-element nav-link" id="sign-in" @click="onSignIn">
-          Sign In
-        </span>
-      </div>
-    </nav>
-    <div class="sign-in-page" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
-      <div class="form-container">
-        <h1 id="setup-title">Create Your Account</h1>
-        <p class="setup-description">
-          Please make sure all information entered below is accurate and complete,
-          as outlined in the terms of service.
-        </p>
-        <form @submit.prevent="onFormSubmit">
-          <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
-          
-          <!-- Input Fields -->
-          <div class="input-group">
-            <div class="form-row">
-              <input
-                class="form-input"
-                v-model="formData.email"
-                type="email"
-                placeholder="Email Address"
-                required
-              />
-              <input
-                class="form-input"
-                v-model="formData.password"
-                type="password"
-                placeholder="Password"
-                required
-                @focus="showPasswordRequirements = true"
-                @blur="showPasswordRequirements = false"
-              />
-            </div>
-
-            <div class="form-row">
-              <input
-                class="form-input"
-                v-model="formData.firstName"
-                type="text"
-                placeholder="Legal First Name"
-                required
-              />
-              <input
-                class="form-input"
-                v-model="formData.lastName"
-                type="text"
-                placeholder="Legal Last Name"
-                required
-              />
-            </div>
-
-            <div class="form-row">
-              <input
-                class="form-input"
-                v-model="formData.careerField"
-                type="text"
-                placeholder="Career Field/Industry (Optional)"
-              />
-              <input
-                class="form-input"
-                v-model="formData.dateOfBirth"
-                type="date"
-                placeholder="Date of Birth"
-                required
-              />
-            </div>
-          </div>
-
-          <!-- Checkboxes -->
-          <div class="checkbox-group">
-            <div class="form-checkbox">
-              <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
-              <label for="agreeToTerms">
-                I hereby acknowledge that I have read and agree with the Append
-                privacy policy and terms of service.
-              </label>
-            </div>
-            <div class="form-checkbox">
-              <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
-              <label for="receiveEmails">
-                I would like to receive emails from Append that may include
-                promotions, updates, and sponsorships.
-              </label>
-            </div>
-          </div>
-
-          <div class="buttons-container">
-            <!-- Sign Up Button -->
-            <button 
-              id="create-account-button" 
-              type="submit" 
-              :disabled="loading"
-              class="primary-button"
-            >
-              <span v-if="loading">Loading...</span>
-              <span v-else>Create Account</span>
-            </button>
-
-            <!-- Or Divider -->
-            <div class="or-divider">
-              <div class="line"></div>
-              <span>Or</span>
-              <div class="line"></div>
-            </div>
-
-            <!-- Google Sign In -->
-            <div id="google-signin-btn" class="google-button-container"></div>
-          </div>
-        </form>
-      </div>
-    </div>
-  </PricingBackground>
+    </PricingBackground>
+  </div>
 </template>
 
 <style scoped>
@@ -381,19 +383,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.main-content {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  overflow: hidden;
-}
-
 .sign-up-page {
   width: 100%;
   height: 100vh;
@@ -403,6 +392,7 @@ onMounted(() => {
   padding: 0 20px;
   position: relative;
   z-index: 15;
+  overflow: hidden;
 }
 
 nav {
@@ -438,7 +428,11 @@ nav {
   height: 100%;
   width: auto;
   object-fit: contain;
-  filter: brightness(0);
+  filter: brightness(0); /* Makes logo black */
+}
+
+.logo-container:hover {
+  opacity: 0.7;
 }
 
 .nav-link {

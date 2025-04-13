@@ -250,6 +250,25 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.logo-container {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  height: 35px;
+}
+
+.Logo {
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+  filter: brightness(0); /* Makes logo black */
+}
+
+.logo-container:hover {
+  opacity: 0.7;
+}
+
 nav {
   display: flex;
   align-items: center;
@@ -397,5 +416,42 @@ nav {
     width: 90%;
     padding: 30px;
   }
+}
+
+/* Keep exactly the same nav-element styles as SignUp */
+.nav-element {
+  font-size: 16px;
+  color: #000;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.nav-link {
+  text-decoration: none;
+  position: relative;
+  font-weight: 300;
+  cursor: pointer;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 1px;
+  bottom: -2px;
+  left: 0;
+  background-color: #000;
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.3s ease;
+}
+
+.nav-link:hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+.nav-element:hover {
+  opacity: 0.7;
 }
 </style>
