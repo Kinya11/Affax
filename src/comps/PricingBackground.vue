@@ -57,7 +57,7 @@ const initParticles = async () => {
           distance: 150,
           enable: true,
           opacity: 0.5,
-          width: 1.5, // Increased line thickness
+          width: 1.5,
         },
         move: {
           direction: 'none',
@@ -72,12 +72,12 @@ const initParticles = async () => {
         number: {
           density: {
             enable: true,
-            area: 800,
+            area: 700, // Middle ground between 600 and 800
           },
-          value: 100, // Increased number of particles
+          value: 125, // Middle ground between 100 and 150
         },
         opacity: {
-          value: 0.7, // Increased opacity
+          value: 0.7,
         },
         shape: {
           type: 'circle',
@@ -95,12 +95,9 @@ const initParticles = async () => {
 </script>
 
 <template>
-  <div class="background-container" :class="styleType">
+  <div class="background-wrapper">
     <div v-if="styleType === 'particles'" id="particles-background"></div>
-    <div v-if="styleType === 'geometric'" class="geometric-pattern"></div>
-    <div class="content">
-      <slot></slot>
-    </div>
+    <slot></slot>
   </div>
 </template>
 
@@ -130,35 +127,23 @@ const initParticles = async () => {
   height: 100%;
   background-color: #f5f7ff;
   background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%234a90e2' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  z-index: 0;
+  z-index: -1;
 }
 
 /* 3. Particles Background */
 #particles-background {
-  position: absolute;
+  position: fixed !important;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
+  z-index: 0; /* Set between page background and form container */
 }
 
-.background-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.content {
+.background-wrapper {
   position: relative;
+  min-height: 100vh;
   width: 100%;
-  height: 100vh;
-  z-index: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 
 /* 4. Blur App Background */

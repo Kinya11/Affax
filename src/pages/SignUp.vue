@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import api from '@/api';
 import { useToast } from 'vue-toastification';
@@ -12,13 +12,13 @@ const pageVisible = ref(false);
 
 const onSignIn = () => {
   pageVisible.value = false;
-  setTimeout(() => {
-    router.push('/sign-in');
-  }, 600); // Match the animation duration
+  router.push({ name: "SignIn" });
 };
 
 onMounted(() => {
-  pageVisible.value = true;
+  requestAnimationFrame(() => {
+    pageVisible.value = true;
+  });
 });
 
 // Form data with validation states
@@ -254,9 +254,11 @@ onMounted(() => {
         <img class="Logo" src="@/assets/logo.svg" alt="append logo" />
       </div>
       <div class="nav-element" id="nav-center"></div>
-      <span class="nav-element nav-link" id="sign-in" @click="onSignIn">
-        Sign In
-      </span>
+      <div class="nav-right">
+        <span class="nav-element nav-link" id="sign-in" @click="onSignIn">
+          Sign In
+        </span>
+      </div>
     </nav>
     <div class="sign-in-page" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
       <div class="form-container">
@@ -356,7 +358,7 @@ onMounted(() => {
             <!-- Or Divider -->
             <div class="or-divider">
               <div class="line"></div>
-              <span>or</span>
+              <span>Or</span>
               <div class="line"></div>
             </div>
 
@@ -370,9 +372,43 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.sign-up-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.sign-up-page {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0 20px;
+  position: relative;
+  z-index: 15;
+}
+
 nav {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   position: fixed;
   top: 10px;
   left: 0.25%;
@@ -382,7 +418,7 @@ nav {
   border-width: 1px;
   border-radius: 5px;
   padding: 10px;
-  z-index: 10000;
+  z-index: 1000;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   background-color: rgba(255, 255, 255, 0.5);
@@ -398,40 +434,11 @@ nav {
   height: 35px;
 }
 
-.logo-container:hover {
-  opacity: 0.8;
-}
-
 .Logo {
   height: 100%;
   width: auto;
   object-fit: contain;
-  filter: brightness(0); /* This makes the logo black */
-}
-
-#setup-title {
-  color: #000;
-  font-size: 30px;
-  margin-bottom: 15px;
-  font-weight: 700;
-}
-
-#nav-center {
-  flex: 1;
-}
-
-.nav-element {
-  font-size: 14px;
-  color: #000;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-}
-
-#sign-in {
-  font-weight: 300;
-  padding: 8px 16px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
+  filter: brightness(0);
 }
 
 .nav-link {
@@ -458,6 +465,19 @@ nav {
   transform-origin: bottom left;
 }
 
+.nav-right {
+  margin-left: auto;
+  padding-right: 10px;
+}
+
+/* Keep exactly the same nav-element styles as SignIn */
+.nav-element {
+  font-size: 16px;
+  color: #000;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
 /* Page transition animations */
 .fade-in {
   animation: fadeIn 0.6s forwards;
@@ -470,35 +490,46 @@ nav {
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(20px) translateZ(0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) translateZ(0);
   }
 }
 
 @keyframes fadeOut {
   from {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) translateZ(0);
   }
   to {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(-20px) translateZ(0);
   }
 }
 
 .form-container {
-  width: 45%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 40%;
+  height: auto;
   min-height: fit-content;
-  margin: 80px auto;
+  padding: 2.5rem;
+  margin: 0 auto;
+  margin-top: 100px;
+  margin-bottom: 40px;
+  padding-top: 10px;
+  padding-bottom: 40px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 200;
   text-align: center;
-  padding: 35px;
-  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
-  background-color: white;
-  border-radius: 10px;
-  border: 1px solid black;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .input-group {
@@ -522,6 +553,9 @@ nav {
   border: 1px solid #545454;
   border-radius: 8px;
   transition: border-color 0.2s ease;
+  position: relative;
+  z-index: 300;
+  background-color: rgba(255, 255, 255, 0.9);
 }
 
 h1 {
@@ -538,11 +572,13 @@ h1 {
 }
 
 .buttons-container {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
-  margin-top: 25px;
+  gap: 20px;
+  position: relative;
+  z-index: 300;
 }
 
 .primary-button {
@@ -578,12 +614,18 @@ h1 {
 }
 
 .google-button-container {
-  width: 55%;
-  margin-left: calc(50% - 27.5%);
+  width: 300px;
+  margin: 0 auto;
+  min-height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .checkbox-group {
   margin: 20px 0;
+  position: relative;
+  z-index: 300;
 }
 
 .form-checkbox {
