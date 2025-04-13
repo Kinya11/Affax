@@ -514,7 +514,7 @@ nav {
   min-height: fit-content;
   padding: 2.5rem;
   margin: 0 auto;
-  margin-top: 100px;
+  margin-top: 115px;
   margin-bottom: 40px;
   padding-top: 10px;
   padding-bottom: 40px;
