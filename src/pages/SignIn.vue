@@ -22,6 +22,7 @@ const loading = ref(false);
 const error = ref("");
 const showPopup = ref(false);
 const googleSignInBtn = ref(null);
+const pageVisible = ref(false);
 
 const onSignIn = async () => {
   if (!email.value || !password.value) {
@@ -161,6 +162,10 @@ const onSignUp = () => {
 
 onMounted(() => {
   setTimeout(() => {
+    pageVisible.value = true;
+  }, 0);
+  
+  setTimeout(() => {
     initializeGoogleAuth();
   }, 100);
 });
@@ -184,7 +189,7 @@ onMounted(() => {
     </nav>
     
     <main class="main-content">
-      <div class="sign-in-container">
+      <div class="sign-in-container" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
         <h1 id="setup-title">Sign In</h1>
         <p>Sign in using your email or password</p>
         
@@ -453,5 +458,38 @@ nav {
 
 .nav-element:hover {
   opacity: 0.7;
+}
+
+/* Add these animation classes */
+.fade-in {
+  animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.fade-out {
+  animation: fadeOut 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px) translateZ(0);
+  }
 }
 </style>

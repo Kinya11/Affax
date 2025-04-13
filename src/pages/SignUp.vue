@@ -16,9 +16,9 @@ const onSignIn = () => {
 };
 
 onMounted(() => {
-  requestAnimationFrame(() => {
+  setTimeout(() => {
     pageVisible.value = true;
-  });
+  }, 0);
 });
 
 // Form data with validation states
@@ -474,11 +474,13 @@ nav {
 
 /* Page transition animations */
 .fade-in {
-  animation: fadeIn 0.6s forwards;
+  animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
 }
 
 .fade-out {
-  animation: fadeOut 0.6s forwards;
+  animation: fadeOut 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
 }
 
 @keyframes fadeIn {
