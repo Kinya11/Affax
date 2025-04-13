@@ -232,6 +232,15 @@ onMounted(() => {
 </template>
 
 <style scoped>
+
+#setup-title {
+  color: #000;
+  font-size: 30px;
+  font-weight: 500;
+  margin-bottom: 0px;
+  font-weight: 500;
+}
+
 .sign-in-wrapper {
   position: fixed;
   top: 0;
@@ -289,14 +298,19 @@ nav {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 20px; /* Reduced gap from 20px to 15px */
 }
 
 .sign-in-container h1 {
   width: 100%;
   text-align: center;
-  margin: 0 0 10px 0;
+  margin: 0 0 5px 0;
   font-size: 24px;
+}
+
+.sign-in-container p {
+  margin: 0 0 25px 0; /* Reduced margin-bottom from default to 10px */
+  color: #666; /* Optional: added to maintain readability */
 }
 
 /* OR divider styling */
@@ -304,7 +318,7 @@ nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 45px auto;
+  margin: 25px auto; /* Reduced from 45px */
   width: 300px;
   gap: 10px;
   align-self: center;
@@ -333,6 +347,7 @@ nav {
   display: flex;
   justify-content: center;
   align-items: center;
+  margin-bottom: 50px;
 }
 
 /* Error message styling */
@@ -353,7 +368,9 @@ nav {
 .sign-in-input {
   width: 100%;
   padding: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.368);
+  width: 80%;
+  margin-left: 35px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.9);
   transition: border-color 0.2s ease;
@@ -365,11 +382,15 @@ nav {
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
 }
 
-#sign-in-button {
-  width: 100%;
-  margin: 10px 0;
-  height: 40px;
+#sign-in-button,
+#sign-in-button :deep(button) {
+  width: 70%;
+  margin: 15px 0;
+  height: 40px !important; /* Increased height and added !important */
+  min-height: 40px !important; /* Added min-height to ensure consistency */
+  border-radius: 5px;
 }
+
 
 @media (max-width: 768px) {
   .sign-in-container {
