@@ -125,13 +125,18 @@ onMounted(async () => {
     console.log('Device check response:', data);
     
     if (data.registered) {
-      // Update stored device ID if server returns a different one
-      if (data.deviceId && data.deviceId !== deviceId) {
+      // Always use the server's device ID
+      if (data.deviceId) {
         storeDeviceId(data.deviceId);
+        console.log('Updated stored device ID to:', data.deviceId);
       }
-      console.log('Device already registered, redirecting to app list');
-      router.push('/app-list');
-      return;
+      
+      // Only redirect if the device is actually registered
+      if (data.existingDevice) {
+        console.log('Device already registered, redirecting to app list');
+        router.push('/app-list');
+        return;
+      }
     }
   } catch (error) {
     console.error('Device check failed:', error);

@@ -22,13 +22,16 @@ import InstallButton from '@/comps/AppList/InstallButton.vue';
 import InvertedButton from '@/comps/InvertedButton.vue';
 import SudoPasswordModal from '@/comps/AppList/SudoPasswordModal.vue';
 import { useToast } from 'vue-toastification';
-import { getStoredDeviceId } from '@/utils/device';
+import { getStoredDeviceId, storeDeviceId } from '@/utils/device';
+import { useListStore } from '@/stores/listStore';
+import { storeToRefs } from 'pinia';
 
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const toast = useToast();
-
+const listStore = useListStore();
+const { lists, isLoading } = storeToRefs(listStore);
 
 // Theme and UI state
 const theme = ref("light");
@@ -37,7 +40,6 @@ const arrowSrc = computed(() =>
 );
 
 // List management
-const lists = ref([]);
 const newListName = ref("New List");
 const expandedListLastIndex = ref(0);
 const listToDelete = ref(null);
@@ -87,7 +89,6 @@ const checkDeviceRegistration = async () => {
       return false;
     }
     
-    // Skip device check if we don't have a deviceId
     if (!deviceId) {
       router.push('/device-register');
       return false;
@@ -101,10 +102,15 @@ const checkDeviceRegistration = async () => {
     
     console.log('Device check response:', data);
 
-    if (!data.registered) {
+    if (!data.registered || !data.existingDevice) {
       localStorage.removeItem('deviceId');
       router.push('/device-register');
       return false;
+    }
+
+    // Update device ID if server returns a different one
+    if (data.deviceId && data.deviceId !== deviceId) {
+      storeDeviceId(data.deviceId);
     }
 
     return true;
@@ -118,26 +124,66 @@ const checkDeviceRegistration = async () => {
   }
 };
 
+async function fetchUserLists() {
+  try {
+    await listStore.fetchLists();
+    
+    // Only proceed if we have lists
+    if (!lists.value?.length) return;
+
+    // Fetch items for each list
+    const itemPromises = lists.value.map(list => 
+      api.get(`/api/lists/${list.id}/items`)
+        .then(({ data }) => ({ 
+          listId: list.id, 
+          items: Array.isArray(data?.items) ? data.items : 
+                 Array.isArray(data) ? data : [] 
+        }))
+        .catch(error => {
+          console.error(`Error loading apps for list ${list.id}:`, error);
+          return { listId: list.id, items: [] };
+        })
+    );
+
+    const results = await Promise.all(itemPromises);
+    
+    // Update each list with its items
+    results.forEach(({ listId, items }) => {
+      listStore.updateList(listId, { 
+        apps: items,
+        size: calculateListSize(items)
+      });
+    });
+  } catch (error) {
+    console.error('Error fetching user lists:', error);
+  }
+}
+
+// Helper function to calculate list size
+function calculateListSize(apps) {
+  if (!Array.isArray(apps)) return '0 GB';
+  const totalSize = apps.reduce((sum, app) => 
+    sum + (parseFloat(app.file_size_kb || 0) / 1024 / 1024), 0);
+  return `${totalSize.toFixed(2)} GB`;
+}
+
 // Fetch user's lists when component mounts
 onMounted(async () => {
   try {
     const isDeviceValid = await checkDeviceRegistration();
-    if (isDeviceValid) {
-      await fetchUserLists();
-      
-      // Handle expanding list from query parameter
-      const expandListId = route.query.expandList;
-      if (expandListId) {
-        expandListById(Number(expandListId));
-      }
-    } else {
-      toast.error('Failed to verify device. Please try again.');
+    if (!isDeviceValid) return;
+
+    await fetchUserLists();
+    
+    const expandListId = route.query.expandList;
+    if (expandListId) {
+      expandListById(Number(expandListId));
     }
   } catch (error) {
     console.error('AppList mounting error:', error);
+    toast.error('Failed to load app list');
   }
 
-  // Add event listener for list expansion
   window.addEventListener('expand-list', handleExpandList);
 });
 
@@ -167,77 +213,6 @@ function expandList(index) {
       lists.value[expandedListLastIndex.value].isExpanded = false;
     }
     expandedListLastIndex.value = index;
-  }
-}
-
-async function fetchUserLists() {
-  try {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/sign-in");
-      return;
-    }
-
-    const response = await api.get("/api/lists").catch(error => {
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        localStorage.removeItem("token");
-        router.push("/sign-in");
-      }
-      throw error;
-    });
-
-    if (!response.data || !Array.isArray(response.data)) {
-      throw new Error("Invalid server response format");
-    }
-
-    lists.value = response.data.map(list => ({
-      id: list.id,
-      name: list.name,
-      user_id: list.user_id,
-      isExpanded: false,
-      isEditing: false,
-      apps: [],
-      size: "0 GB"
-    }));
-
-    await Promise.allSettled(
-      lists.value.map(async (list, index) => {
-        try {
-          const { data } = await api.get(`/api/lists/${list.id}/items`);
-          lists.value[index].apps = data?.items || data || [];
-          updateListSize(index);
-        } catch (error) {
-          console.error(`Error loading apps for list ${list.id}:`, error);
-          lists.value[index].apps = [];
-          updateListSize(index);
-          
-          if (error.response?.status === 401 || error.response?.status === 403) {
-            localStorage.removeItem("token");
-            router.push("/sign-in");
-          } else {
-            toast.error("Failed to load apps");
-          }
-        }
-      })
-    );
-  } catch (error) {
-    console.error("Failed to load lists:", error);
-    if (error.response) {
-      switch (error.response.status) {
-        case 400:
-          alert("Invalid request. Please try again.");
-          break;
-        case 401:
-        case 403:
-          localStorage.removeItem("token");
-          router.push("/sign-in");
-          break;
-        default:
-          alert("Server error. Please try again later.");
-      }
-    } else {
-      alert("Network error. Please check your connection.");
-    }
   }
 }
 
@@ -272,7 +247,8 @@ async function createNewList() {
     // Dispatch event for navbar update
     window.dispatchEvent(new CustomEvent('list-created'));
     
-    toast.success('List created successfully');
+    // Remove this line:
+    // toast.success('List created successfully');
   } catch (error) {
     if (error.response?.status === 403) {
       toast.error("You've reached your list limit", {
@@ -298,12 +274,17 @@ function showError(message, action = null) {
   }
 }
 
-function updateListSize(listIndex) {
-  const totalSizeKB = lists.value[listIndex].apps.reduce(
-    (sum, app) => sum + (app.file_size_kb || 0),
-    0
-  );
-  lists.value[listIndex].size = `${(totalSizeKB / 1048576).toFixed(2)} GB`;
+function updateListSize(list) {
+  if (!list || !Array.isArray(list.apps)) {
+    list.size = '0 GB';
+    return;
+  }
+  
+  const totalSize = list.apps.reduce((sum, app) => {
+    return sum + (parseFloat(app.size) || 0);
+  }, 0);
+  
+  list.size = totalSize.toFixed(2) + ' GB';
 }
 
 async function updateListName(index, newName) {

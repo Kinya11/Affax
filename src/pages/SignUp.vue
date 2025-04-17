@@ -9,6 +9,8 @@ import PricingBackground from '@/comps/PricingBackground.vue';
 const router = useRouter();
 const toast = useToast();
 const pageVisible = ref(false);
+const googleLoaded = ref(false);
+const isLoaded = ref(false);
 
 const onSignIn = () => {
   pageVisible.value = false;
@@ -19,6 +21,12 @@ onMounted(() => {
   setTimeout(() => {
     pageVisible.value = true;
   }, 0);
+  
+  // Initialize Google Sign-In immediately
+  initializeGoogleSignIn();
+  setTimeout(() => {
+    isLoaded.value = true;
+  }, 100);
 });
 
 // Form data with validation states
@@ -234,6 +242,8 @@ const initializeGoogleSignIn = async () => {
           text: "continue_with",
           logo_alignment: "center"
         });
+        // Set googleLoaded to true after button is rendered
+        googleLoaded.value = true;
       }
     }
   } catch (error) {
@@ -241,14 +251,10 @@ const initializeGoogleSignIn = async () => {
     errorMessage.value = "Google Sign-In is currently unavailable";
   }
 };
-
-onMounted(() => {
-  initializeGoogleSignIn();
-});
 </script>
 
 <template>
-  <div class="sign-up-wrapper">
+  <div class="sign-up-root">
     <PricingBackground styleType="particles">
       <nav>
         <div class="logo-container" @click="router.push('/')">
@@ -261,120 +267,158 @@ onMounted(() => {
           </span>
         </div>
       </nav>
-      <div class="sign-up-page" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
-        <div class="form-container">
-          <h1 id="setup-title">Create Your Account</h1>
-          <p class="setup-description">
-            Please make sure all information entered below is accurate and complete,
-            as outlined in the terms of service.
-          </p>
-          <form @submit.prevent="onFormSubmit">
-            <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
-            
-            <!-- Input Fields -->
-            <div class="input-group">
-              <div class="form-row">
-                <input
-                  class="form-input"
-                  v-model="formData.email"
-                  type="email"
-                  placeholder="Email Address"
-                  required
-                />
-                <input
-                  class="form-input"
-                  v-model="formData.password"
-                  type="password"
-                  placeholder="Password"
-                  required
-                  @focus="showPasswordRequirements = true"
-                  @blur="showPasswordRequirements = false"
-                />
+      <main :class="{ 'loaded': isLoaded }" class="main-content">
+        <div class="sign-up-page">
+          <div class="form-container" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
+            <h1 id="setup-title">Create Your Account</h1>
+            <p class="setup-description">
+              Please make sure all information entered below is accurate and complete,
+              as outlined in the terms of service.
+            </p>
+            <form @submit.prevent="onFormSubmit">
+              <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
+              
+              <!-- Input Fields -->
+              <div class="input-group">
+                <div class="form-row">
+                  <input
+                    class="form-input"
+                    v-model="formData.email"
+                    type="email"
+                    placeholder="Email Address"
+                    required
+                  />
+                  <input
+                    class="form-input"
+                    v-model="formData.password"
+                    type="password"
+                    placeholder="Password"
+                    required
+                    @focus="showPasswordRequirements = true"
+                    @blur="showPasswordRequirements = false"
+                  />
+                </div>
+
+                <div class="form-row">
+                  <input
+                    class="form-input"
+                    v-model="formData.firstName"
+                    type="text"
+                    placeholder="Legal First Name"
+                    required
+                  />
+                  <input
+                    class="form-input"
+                    v-model="formData.lastName"
+                    type="text"
+                    placeholder="Legal Last Name"
+                    required
+                  />
+                </div>
+
+                <div class="form-row">
+                  <input
+                    class="form-input"
+                    v-model="formData.careerField"
+                    type="text"
+                    placeholder="Career Field/Industry (Optional)"
+                  />
+                  <input
+                    class="form-input"
+                    v-model="formData.dateOfBirth"
+                    type="date"
+                    placeholder="Date of Birth"
+                    required
+                  />
+                </div>
               </div>
 
-              <div class="form-row">
-                <input
-                  class="form-input"
-                  v-model="formData.firstName"
-                  type="text"
-                  placeholder="Legal First Name"
-                  required
-                />
-                <input
-                  class="form-input"
-                  v-model="formData.lastName"
-                  type="text"
-                  placeholder="Legal Last Name"
-                  required
-                />
+              <!-- Checkboxes -->
+              <div class="checkbox-group">
+                <div class="form-checkbox">
+                  <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
+                  <label for="agreeToTerms">
+                    I hereby acknowledge that I have read and agree with the Append
+                    privacy policy and terms of service.
+                  </label>
+                </div>
+                <div class="form-checkbox">
+                  <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
+                  <label for="receiveEmails">
+                    I would like to receive emails from Append that may include
+                    promotions, updates, and sponsorships.
+                  </label>
+                </div>
               </div>
 
-              <div class="form-row">
-                <input
-                  class="form-input"
-                  v-model="formData.careerField"
-                  type="text"
-                  placeholder="Career Field/Industry (Optional)"
-                />
-                <input
-                  class="form-input"
-                  v-model="formData.dateOfBirth"
-                  type="date"
-                  placeholder="Date of Birth"
-                  required
-                />
-              </div>
-            </div>
+              <div class="buttons-container">
+                <!-- Sign Up Button -->
+                <button 
+                  id="create-account-button" 
+                  type="submit" 
+                  :disabled="loading"
+                  class="primary-button"
+                >
+                  <span v-if="loading">Loading...</span>
+                  <span v-else>Create Account</span>
+                </button>
 
-            <!-- Checkboxes -->
-            <div class="checkbox-group">
-              <div class="form-checkbox">
-                <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
-                <label for="agreeToTerms">
-                  I hereby acknowledge that I have read and agree with the Append
-                  privacy policy and terms of service.
-                </label>
-              </div>
-              <div class="form-checkbox">
-                <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
-                <label for="receiveEmails">
-                  I would like to receive emails from Append that may include
-                  promotions, updates, and sponsorships.
-                </label>
-              </div>
-            </div>
+                <!-- Or Divider -->
+                <div class="or-divider">
+                  <div class="line"></div>
+                  <span>Or</span>
+                  <div class="line"></div>
+                </div>
 
-            <div class="buttons-container">
-              <!-- Sign Up Button -->
-              <button 
-                id="create-account-button" 
-                type="submit" 
-                :disabled="loading"
-                class="primary-button"
-              >
-                <span v-if="loading">Loading...</span>
-                <span v-else>Create Account</span>
-              </button>
-
-              <!-- Or Divider -->
-              <div class="or-divider">
-                <div class="line"></div>
-                <span>Or</span>
-                <div class="line"></div>
+                <!-- Updated Google Sign In container -->
+                <div class="google-button-container">
+                  <div class="google-button-placeholder" v-if="!googleLoaded"></div>
+                  <div 
+                    id="google-signin-btn" 
+                    :class="{ 'visible': googleLoaded }"
+                  ></div>
+                </div>
               </div>
-
-              <!-- Google Sign In -->
-              <div id="google-signin-btn" class="google-button-container"></div>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
-      </div>
+      </main>
     </PricingBackground>
   </div>
 </template>
 
 <style scoped>
-.sign-up-wrapper {
+.main-content {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  z-index: 10;
+}
+
+.main-content.loaded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#setup-title {
+  color: #000;
+  font-size: 24px;
+  margin-bottom: 15px;
+  margin-top: 0; /* Remove negative margin */
+  font-weight: 500;
+  text-align: center;
+}
+
+.sign-up-root {
   position: fixed;
   top: 0;
   left: 0;
@@ -385,17 +429,76 @@ onMounted(() => {
 
 .sign-up-page {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 0 20px;
-  position: relative;
-  z-index: 15;
   overflow: hidden;
 }
 
+.form-container {
+  width: 40%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 20;
+  margin-top: -40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 nav {
+  position: fixed;
+  top: 10px;
+  left: 0.25%;
+  right: 1%;
+  width: 98%;
+  z-index: 30;
+  /* ... rest of your nav styles ... */
+}
+
+/* If you need scrollbar styling for the form container */
+.form-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.form-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.form-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.form-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Add styles for the particles background */
+:deep(#particles-background) {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 300; /* Ensure nav stays above everything */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -505,29 +608,6 @@ nav {
   }
 }
 
-.form-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 40%;
-  height: auto;
-  min-height: fit-content;
-  padding: 2.5rem;
-  margin: 0 auto;
-  margin-top: 115px;
-  margin-bottom: 40px;
-  padding-top: 10px;
-  padding-bottom: 40px;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-  position: relative;
-  z-index: 200;
-  text-align: center;
-  background-color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
 .input-group {
   display: flex;
   flex-direction: column;
@@ -565,6 +645,7 @@ h1 {
   margin-bottom: 25px;
   color: #666;
   font-size: 14px;
+  text-align: center; /* Add this for consistency */
 }
 
 .buttons-container {
@@ -610,12 +691,41 @@ h1 {
 }
 
 .google-button-container {
+  position: relative;
+  height: 40px;
   width: 300px;
   margin: 0 auto;
-  min-height: 40px;
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.google-button-placeholder {
+  width: 300px;
+  height: 40px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  animation: pulse 1.5s infinite;
+}
+
+#google-signin-btn {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#google-signin-btn.visible {
+  opacity: 1;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.6; }
 }
 
 .checkbox-group {

@@ -2,12 +2,21 @@
 Go to http://localhost:5173/settings to view this page
 -->
 <script setup>
+import { ref } from 'vue';
 import Navbar from '@/comps/Navbar/Navbar.vue';
+
+const theme = ref('light');
+
+function toggleTheme(newTheme) {
+  theme.value = newTheme;
+}
 </script>
 <template>
-  <Navbar />
-  <div id="settings-container" >
-    <h2 class="container-header">Settings</h2>
+  <div class="settings-container"> <!-- Single root element -->
+    <Navbar @toggled="toggleTheme" />
+    <div class="settings-content">
+      <h2 class="container-header">Settings</h2>
+    </div>
   </div>
 </template>
 <script>
@@ -15,31 +24,21 @@ export default {
   name: "Settings",
 };
 </script>
-<style>
-#settings-container {
-  max-width: 76vw;
-  margin-left: 12vw;
+<style scoped>
+.settings-container {
+  min-height: 100vh;
+  opacity: 0;
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+.settings-content {
   padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
-.container-header {
-  font-size: 2rem;
-  text-align: center;
-}
-
-.setting {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-#settings-container {
-  border-style: solid;
-  border-width: 1px;
-  border-color: black;
-  border-radius: 4px;
-  background-color: rgba(255, 255, 255, 0.289);
-  box-shadow: #0000003b 0px 4px 4px;
-  z-index: 10000;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>

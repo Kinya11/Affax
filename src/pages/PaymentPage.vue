@@ -1,68 +1,176 @@
 <script setup>
+import { ref, onMounted } from 'vue';
+import { loadStripe } from '@stripe/stripe-js';
+import { useRouter } from 'vue-router';
 import Navbar from "@/comps/Navbar/Navbar.vue";
 import PricingBackground from '@/comps/PricingBackground.vue';
-</script>
+import BlueGrayButton from "@/comps/BlueGrayButton.vue";
+import { useToast } from 'vue-toastification';
+import api from '@/api';
 
-<template>
-  <PricingBackground style-type="gradient-texture">
-    <Navbar class="nav-glass" />
-    <div class="payment-container">
-      <h1 class="page-title">Payment Information</h1>
+const router = useRouter();
+const toast = useToast();
+const stripe = ref(null);
+const card = ref(null);
+const loading = ref(false);
+const selectedMethod = ref('card');
+const selectedPlan = ref('premium');
+const isLoaded = ref(false);
 
-      <div class="payment-methods">
-        <button class="method-btn active">Credit/Debit Card</button>
-        <button class="method-btn">PayPal</button>
-      </div>
+onMounted(async () => {
+  try {
+    // Initialize Stripe
+    stripe.value = await loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
+    
+    // Create card elements
+    const elements = stripe.value.elements();
+    card.value = elements.create('card', {
+      style: {
+        base: {
+          fontSize: '16px',
+          color: '#424770',
+          '::placeholder': {
+            color: '#aab7c4',
+          },
+        },
+        invalid: {
+          color: '#9e2146',
+        },
+      },
+    });
+    
+    // Mount card element
+    card.value.mount('#card-element');
+    
+    // Handle real-time validation errors
+    card.value.addEventListener('change', function(event) {
+      const displayError = document.getElementById('card-errors');
+      if (event.error) {
+        displayError.textContent = event.error.message;
+      } else {
+        displayError.textContent = '';
+      }
+    });
 
-      <form class="payment-form">
-        <!-- Card Form -->
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="cardholder-name">Cardholder Name</label>
-            <input type="text" id="cardholder-name" placeholder="John Doe" />
-          </div>
+    setTimeout(() => {
+      isLoaded.value = true;
+    }, 100);
+  } catch (error) {
+    console.error('Failed to initialize payment page:', error);
+  }
+});
 
-          <div class="form-group">
-            <label for="card-number">Card Number</label>
-            <input type="text" id="card-number" placeholder="1234 5678 9012 3456" />
-          </div>
+const handlePayment = async () => {
+  if (!stripe.value || !card.value) {
+    toast.error('Payment system not initialized');
+    return;
+  }
 
-          <div class="form-row">
-            <div class="form-group">
-              <label for="expiry-date">Expiration</label>
-              <input type="text" id="expiry-date" placeholder="MM/YY" />
-            </div>
-            <div class="form-group">
-              <label for="cvv">CVV</label>
-              <input type="text" id="cvv" placeholder="123" />
-            </div>
-          </div>
-        </div>
+  loading.value = true;
+  
+  try {
+    // Create payment intent
+    const { data: { clientSecret } } = await api.post('/api/payment/create-payment-intent', {
+      plan: selectedPlan.value
+    });
 
-        <!-- Plan Summary -->
-        <div class="summary">
-          <h2>Plan Summary</h2>
-          <p>Selected Plan: <strong>Premium</strong></p>
-          <p>Total: <strong>$10.00 / month</strong></p>
-        </div>
+    // Confirm payment
+    const result = await stripe.value.confirmCardPayment(clientSecret, {
+      payment_method: {
+        card: card.value,
+      }
+    });
 
-        <!-- Actions -->
-        <div class="form-actions">
-          <button type="submit" class="proceed-btn">Pay Now</button>
-          <button type="button" class="cancel-btn">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </PricingBackground>
-</template>
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
 
-<script>
-export default {
-  name: "PaymentPage",
+    // Payment successful
+    toast.success('Payment successful!');
+    router.push('/dashboard'); // or wherever you want to redirect after success
+  } catch (error) {
+    toast.error(error.message || 'Payment failed. Please try again.');
+  } finally {
+    loading.value = false;
+  }
+};
+
+const setPaymentMethod = (method) => {
+  selectedMethod.value = method;
 };
 </script>
 
+<template>
+  <div :class="{ 'loaded': isLoaded }" class="payment-page">
+    <PricingBackground style-type="gradient-texture">
+      <Navbar class="nav-glass" />
+      <div class="payment-container">
+        <h1 class="page-title">Payment Information</h1>
+
+        <div class="payment-methods">
+          <BlueGrayButton 
+            :class="{ active: selectedMethod === 'card' }"
+            @click="setPaymentMethod('card')"
+          >
+            Credit/Debit Card
+          </BlueGrayButton>
+          <BlueGrayButton 
+            :class="{ active: selectedMethod === 'paypal' }"
+            @click="setPaymentMethod('paypal')"
+            disabled
+          >
+            PayPal (Coming Soon)
+          </BlueGrayButton>
+        </div>
+
+        <form class="payment-form" @submit.prevent="handlePayment">
+          <div v-if="selectedMethod === 'card'" class="form-grid">
+            <div id="card-element"></div>
+            <div id="card-errors" role="alert"></div>
+          </div>
+
+          <!-- Plan Summary -->
+          <div class="summary">
+            <h2>Plan Summary</h2>
+            <p>Selected Plan: <strong>{{ selectedPlan }}</strong></p>
+            <p>Total: <strong>$10.00 / month</strong></p>
+          </div>
+
+          <!-- Actions -->
+          <div class="form-actions">
+            <BlueGrayButton 
+              type="submit" 
+              :disabled="loading"
+              class="proceed-btn"
+            >
+              {{ loading ? 'Processing...' : 'Pay Now' }}
+            </BlueGrayButton>
+            <button 
+              type="button" 
+              class="cancel-btn" 
+              @click="$router.push('/pricing')"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </PricingBackground>
+  </div>
+</template>
+
 <style scoped>
+.payment-page {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.payment-page.loaded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .nav-glass {
   background-color: rgba(255, 255, 255, 0.5);
   position: fixed;
@@ -88,13 +196,14 @@ export default {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   position: relative;
   z-index: 1;
-  margin-top: calc(35px + 20px + 2rem); /* navbar height + navbar top margin + additional spacing */
+  margin-top: calc(35px + 20px + 2rem);
 }
 
 .page-title {
   text-align: center;
   margin-bottom: 2rem;
   font-size: 2rem;
+  color: var(--dark-blue);
 }
 
 .payment-methods {
@@ -104,24 +213,18 @@ export default {
   margin-bottom: 1.5rem;
 }
 
-.method-btn {
+.payment-methods :deep(.blue-gray-button) {
   flex: 1;
   padding: 0.8rem 1rem;
-  background-color: #6c63ff;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
 }
 
-.method-btn:hover {
-  background-color: #5548c9;
+.payment-methods :deep(.blue-gray-button.active) {
+  background-color: var(--dark-blue);
 }
 
-.method-btn.active {
-  background-color: #5548c9;
+.payment-methods :deep(.blue-gray-button[disabled]) {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .payment-form {
@@ -134,37 +237,33 @@ export default {
 }
 
 .form-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
-.form-row {
-  display: flex;
-  gap: 1rem;
-}
-
-.form-group {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.form-group label {
-  font-size: 0.9rem;
-  margin-bottom: 0.3rem;
-}
-
-.form-group input {
-  padding: 0.8rem;
+#card-element {
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
   border: 1px solid #ccc;
-  border-radius: 6px;
-  background-color: white;
+  transition: border-color 0.15s ease;
+}
+
+#card-element:focus {
+  border-color: var(--dark-blue);
+  box-shadow: 0 0 0 1px var(--dark-blue);
+}
+
+#card-errors {
+  color: #dc3545;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  min-height: 20px;
 }
 
 .summary {
   margin-top: 2rem;
   text-align: center;
+  color: var(--dark-blue);
 }
 
 .summary h2 {
@@ -178,20 +277,20 @@ export default {
   margin-top: 2rem;
 }
 
-.proceed-btn {
-  background-color: #6c63ff;
-  color: white;
+.form-actions :deep(.blue-gray-button) {
+  width: 100%;
   padding: 0.9rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
 }
 
-.proceed-btn:hover {
-  background-color: #5548c9;
+.proceed-btn {
+  background-color: var(--dark-blue);
+  color: white;
+  font-weight: 500;
+}
+
+.proceed-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .cancel-btn {
@@ -200,9 +299,19 @@ export default {
   color: #666;
   font-size: 0.95rem;
   cursor: pointer;
+  padding: 0.5rem;
 }
 
 .cancel-btn:hover {
   text-decoration: underline;
+}
+
+/* Ensure no overflow */
+:deep(#app) {
+  overflow: hidden;
+}
+
+body {
+  overflow: hidden;
 }
 </style>

@@ -62,7 +62,9 @@ async function logout() {
     @mouseover="moveArrowRight()"
     @mouseleave="unmoveArrowRight()"
   >
-    <span :class="['nav-dropdown-span', theme]"><slot></slot></span>
+    <div :class="['nav-dropdown-span', theme]">
+      <slot></slot>
+    </div>
     <img
       :class="['sideways-arrow', arrowStatus]"
       :src="arrowSrc"
@@ -74,6 +76,15 @@ async function logout() {
 .navbar-element {
   margin-bottom: 10px;
   margin-right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-dropdown-span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .sideways-arrow {

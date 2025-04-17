@@ -6,10 +6,14 @@ import NavbarElement from "./NavbarElement.vue";
 import ThemeToggleSwitch from "./ThemeToggleSwitch.vue";
 import auth from '@/api/auth';
 import api from '@/api';
+import { useToast } from 'vue-toastification';
 
 const router = useRouter();
 const userStore = useUserStore();
 const lists = ref([]);
+const toast = useToast();
+const isUpgradeLoading = ref(false);
+const subscriptionStatus = ref(null);
 
 // Add this function to fetch lists
 async function fetchLists() {
@@ -49,9 +53,40 @@ const setupListUpdateListeners = () => {
   });
 };
 
-onMounted(() => {
+// Add this function to handle subscription checks
+async function checkSubscription() {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+
+    const response = await api.get('/api/subscription');
+    return response.data;
+  } catch (error) {
+    console.error('Failed to check subscription:', error);
+    // Return default free plan for development
+    if (import.meta.env.MODE === 'development') {
+      return {
+        currentPlan: {
+          name: 'free',
+          limits: {
+            maxLists: 3,
+            maxAppsPerList: 5
+          }
+        },
+        availableSeats: 1,
+        usedSeats: 1
+      };
+    }
+    return null;
+  }
+}
+
+onMounted(async () => {
   startListPolling();
   setupListUpdateListeners();
+  
+  // Preload subscription status
+  subscriptionStatus.value = await checkSubscription();
 });
 
 // Add this function to handle list click
@@ -149,6 +184,42 @@ function toggleTheme(newTheme) {
 if (window.location.pathname == "/pricing-page") {
   theme = "light";
 }
+
+// Add function to handle upgrade click
+const handleUpgradeClick = async () => {
+  if (isUpgradeLoading.value) return;
+  
+  try {
+    isUpgradeLoading.value = true;
+    
+    // For development, allow direct navigation
+    if (import.meta.env.MODE === 'development') {
+      router.push('/pricing-page');
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/sign-in');
+      return;
+    }
+
+    // Check subscription status
+    const status = await checkSubscription();
+    if (status?.currentPlan?.name !== 'free') {
+      toast.info('You are already on a paid plan!');
+      return;
+    }
+
+    router.push('/pricing-page');
+  } catch (error) {
+    console.error('Failed to check subscription:', error);
+    // Always allow navigation to pricing page
+    router.push('/pricing-page');
+  } finally {
+    isUpgradeLoading.value = false;
+  }
+};
 </script>
 
 <template>
@@ -254,11 +325,14 @@ if (window.location.pathname == "/pricing-page") {
             Manage Database
           </NavbarElement>
         </router-link>
-        <router-link to="/pricing-page">
+        <div @click="handleUpgradeClick">
           <NavbarElement :theme="theme" :arrowSrc="arrowSrc">
-            Upgrade
+            <div class="upgrade-button-content">
+              <span>Upgrade</span>
+              <div v-if="isUpgradeLoading" class="spinner"></div>
+            </div>
           </NavbarElement>
-        </router-link>
+        </div>
         <router-link to="/sign-in">
           <NavbarElement @click="logout" id="logoutbutton" :theme="theme" :arrowSrc="arrowSrc">
             Log out
@@ -463,5 +537,26 @@ header {
 
 .logo-container:hover {
   opacity: 0.8;
+}
+
+.upgrade-button-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

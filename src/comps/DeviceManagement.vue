@@ -1,24 +1,25 @@
 <template>
   <div>
     <Navbar @toggled="toggleTheme" />
-    <div class="device-management" :class="theme">
+    <div class="device-management" :class="[theme, { 'fade-in': !initialLoading }]">
       <h2>Device Management</h2>
       
       <!-- Device Usage Summary -->
-      <div v-if="loading" class="loading">
-        Loading devices...
+      <div v-if="loading" class="loading-container fade-in">
+        <div class="loading-spinner"></div>
+        <p>Loading devices...</p>
       </div>
       
-      <div v-else-if="error" class="error">
+      <div v-else-if="error" class="error fade-in">
         {{ error }}
       </div>
       
-      <div v-else-if="activeDevices.length === 0" class="no-devices">
+      <div v-else-if="activeDevices.length === 0" class="no-devices fade-in">
         <p>No devices registered. Redirecting to device registration...</p>
         <div class="loading-spinner"></div>
       </div>
       
-      <div v-else>
+      <div v-else class="content-container fade-in">
         <div class="usage-summary">
           <p>Device Usage: {{ activeDevices.length }} of {{ seatLimit }} seats used</p>
           <div class="progress-bar">
@@ -31,7 +32,10 @@
 
         <!-- Device List -->
         <div class="device-list">
-          <div v-for="device in activeDevices" :key="device.id" class="device-item">
+          <div v-for="device in activeDevices" 
+               :key="device.id" 
+               class="device-item"
+               :class="{ 'fade-in': !initialLoading }">
             <div class="device-info">
               <h3>{{ device.deviceName }}</h3>
               <p>Platform: {{ device.platform }}</p>
@@ -78,6 +82,7 @@ const loading = ref(true);
 const error = ref(null);
 const theme = ref('light');
 const currentDeviceId = ref(getStoredDeviceId());
+const initialLoading = ref(true);
 
 const toggleTheme = (newTheme) => {
   theme.value = newTheme;
@@ -90,16 +95,13 @@ const fetchDevices = async () => {
     
     const deviceId = getStoredDeviceId();
     
-    // First verify the current device ID
     const deviceCheck = await api.get('/api/devices/check', {
       headers: {
         'X-Device-ID': deviceId
       }
     });
     
-    // Update current device ID if needed
     currentDeviceId.value = deviceCheck.data.deviceId || deviceId;
-    console.log('Verified current device ID:', currentDeviceId.value);
     
     const response = await api.get('/api/devices', {
       headers: {
@@ -108,17 +110,12 @@ const fetchDevices = async () => {
     });
 
     if (response.data && response.data.devices) {
-      activeDevices.value = response.data.devices.map(device => {
-        const deviceId = device.device_id || device.deviceId;
-        const isCurrentDev = isCurrentDevice(deviceId);
-        console.log('Device mapping:', { deviceId, isCurrentDev, currentDeviceId: currentDeviceId.value });
-        return {
-          ...device,
-          isDeactivating: false,
-          deviceId: deviceId,
-          isCurrentDevice: isCurrentDev
-        };
-      });
+      activeDevices.value = response.data.devices.map(device => ({
+        ...device,
+        isDeactivating: false,
+        deviceId: device.device_id || device.deviceId,
+        isCurrentDevice: isCurrentDevice(device.device_id || device.deviceId)
+      }));
       seatLimit.value = response.data.seatLimit;
     }
   } catch (err) {
@@ -127,6 +124,10 @@ const fetchDevices = async () => {
     activeDevices.value = [];
   } finally {
     loading.value = false;
+    // Add small delay before removing initial loading state
+    setTimeout(() => {
+      initialLoading.value = false;
+    }, 100);
   }
 };
 
@@ -200,6 +201,10 @@ const isCurrentDevice = (deviceId) => {
 
 onMounted(() => {
   fetchDevices();
+  // Shorter delay for more immediate response
+  setTimeout(() => {
+    initialLoading.value = false;
+  }, 50);
 });
 
 const formatDate = (date) => {
@@ -234,6 +239,20 @@ onMounted(fetchDevices);
   padding: 20px;
   max-width: 800px;
   margin: 70px auto 0;
+  opacity: 0;
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .device-management.dark {

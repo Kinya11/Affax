@@ -1,13 +1,15 @@
 <template>
-  <router-view v-slot="{ Component, route }">
-    <AuthGuard :requires-auth="route.meta.requiresAuth">
-      <component :is="Component" />
-    </AuthGuard>
+  <router-view v-slot="{ Component }">
+    <transition name="fade" mode="out-in">
+      <div :key="$route.fullPath">
+        <component :is="Component" />
+      </div>
+    </transition>
   </router-view>
 </template>
 
 <script setup>
-import AuthGuard from '@/comps/AuthGuard.vue';
+import DevToolbar from '@/comps/DevToolbar.vue';
 </script>
 
 <style>
@@ -22,33 +24,27 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Override toast container z-index */
+/* Subtle page transitions */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Ensure the transition wrapper doesn't affect layout */
+.fade-enter-active > div,
+.fade-leave-active > div {
+  width: 100%;
+  height: 100%;
+}
+
+/* Vue-Toastification container styles */
 .Vue-Toastification__container.toast-container {
-  z-index: 100001 !important; /* Higher than navbar's 10000 */
-  top: 20px !important; /* Ensure some spacing from the top */
-}
-
-/* Adjust toast appearance */
-.Vue-Toastification__toast {
-  padding: 12px 20px !important;
-  border-radius: 8px !important;
-  text-align: center !important;
-}
-
-.Vue-Toastification__toast-body {
-  text-align: center !important;
-  width: 100% !important;
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-}
-
-/* Optional: If you want to center the icon and text together */
-.Vue-Toastification__toast-component-body {
-  justify-content: center !important;
-}
-
-.centered-toast {
-  text-align: center !important;
+  z-index: 100001 !important;
+  top: 20px !important;
 }
 </style>

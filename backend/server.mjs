@@ -16,11 +16,13 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import cookieParser from "cookie-parser";
 import deviceRoutes from './routes/deviceRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import rateLimit from 'express-rate-limit';
 import geoip from 'geoip-lite';
 import https from 'https';
+import subscriptionRoutes from './routes/subscriptionRoutes.mjs';
 const { lookup } = geoip;
 
 const execAsync = promisify(exec);
@@ -195,10 +197,9 @@ function getPlatform() {
 
 // Middleware configuration
 const corsOptions = {
-  origin:
-    process.env.NODE_ENV === "production"
-      ? "https://affax.app"
-      : ["http://localhost:5173", "http://127.0.0.1:5173"],
+  origin: process.env.NODE_ENV === "production"
+    ? ["https://affax.app", "https://www.affax.app"]
+    : ["http://localhost:5173", "http://127.0.0.1:5173"],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
   allowedHeaders: [
@@ -210,12 +211,35 @@ const corsOptions = {
     "Accept",
     "X-Client-Version",
     "X-Device-Platform",
+    "Origin"
   ],
   exposedHeaders: ["Authorization", "X-Device-Registration", "X-New-Token"],
   maxAge: 86400,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
-app.options("*", cors(corsOptions));
+// Add debug logging for CORS
+app.use((req, res, next) => {
+  console.log('Incoming request:', {
+    method: req.method,
+    path: req.path,
+    origin: req.headers.origin,
+    'content-type': req.headers['content-type']
+  });
+  next();
+});
+
+app.use(cors(corsOptions));
+
+// Remove or modify the existing COOP and COEP headers for development
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    res.removeHeader("Cross-Origin-Opener-Policy");
+    res.removeHeader("Cross-Origin-Embedder-Policy");
+    next();
+  });
+}
 
 app.use(bodyParser.json());
 app.use(express.json());
@@ -234,6 +258,7 @@ app.use(
           "'self'",
           "'unsafe-inline'",
           "https://accounts.google.com",
+          "https://apis.google.com"
         ],
         "frame-src": ["'self'", "https://accounts.google.com"],
         "img-src": ["'self'", "data:", "https://lh3.googleusercontent.com"],
@@ -241,9 +266,11 @@ app.use(
           "'self'",
           "http://localhost:5001",
           "http://localhost:5173",
-        ],
-      },
-    },
+          "https://api.affax.app",
+          "https://affax.app"
+        ]
+      }
+    }
   })
 );
 
@@ -1775,6 +1802,12 @@ console.log('Routes mounted:', app._router.stack.map(r => r.route?.path || r.nam
 
 // Mount device routes
 app.use('/api/devices', deviceRoutes);
+
+// Mount payment routes
+app.use('/api/payment', paymentRoutes);
+
+// Mount the subscription routes
+app.use('/api/subscription', subscriptionRoutes);
 
 // Handle 404 for undefined API routes
 app.use('/api/*', (req, res) => {

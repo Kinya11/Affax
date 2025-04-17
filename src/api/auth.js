@@ -66,6 +66,45 @@ const auth = {
 
   async isAuthenticated() {
     return await this.verifyToken();
+  },
+
+  async checkSubscription() {
+    // For development, allow override with query param or localStorage
+    if (import.meta.env.MODE === 'development') {
+      const devMode = localStorage.getItem('devSubscriptionMode');
+      if (devMode === 'free') {
+        return {
+          currentPlan: {
+            name: 'free',
+            limits: {
+              maxLists: 3,
+              maxAppsPerList: 5
+            }
+          }
+        };
+      }
+      // Default pro subscription for development
+      return {
+        currentPlan: {
+          name: 'pro',
+          limits: {
+            maxLists: -1,
+            maxAppsPerList: -1
+          }
+        }
+      };
+    }
+
+    try {
+      const token = this.getToken();
+      if (!token) return null;
+
+      const response = await api.get('/api/subscription');
+      return response.data;
+    } catch (error) {
+      console.error('Subscription check failed:', error);
+      throw error;
+    }
   }
 };
 

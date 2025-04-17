@@ -95,17 +95,31 @@ const routes = [
   },
 ];
 
+// Add this route for development
+if (import.meta.env.MODE === 'development') {
+  routes.push({
+    path: '/dev/pricing',
+    redirect: '/pricing-page'
+  });
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 });
 
-router.beforeEach(async (to, from, next) => {
-  const token = localStorage.getItem('token');
-  const deviceId = getStoredDeviceId();
+router.beforeEach((to, from, next) => {
+  // For development, allow all navigation
+  if (import.meta.env.MODE === 'development') {
+    next();
+    return;
+  }
 
-  // If route requires auth
+  // Your existing navigation guard logic
   if (to.matched.some(record => record.meta.requiresAuth)) {
+    const token = localStorage.getItem('token');
+    const deviceId = getStoredDeviceId();
+
     if (!token) {
       console.log('No token, redirecting to sign-in');
       next('/sign-in');
@@ -113,33 +127,34 @@ router.beforeEach(async (to, from, next) => {
     }
 
     // Check for devices first
-    try {
-      const devicesResponse = await api.get('/api/devices');
-      const hasDevices = devicesResponse.data.devices && devicesResponse.data.devices.length > 0;
+    api.get('/api/devices')
+      .then(response => {
+        const hasDevices = response.data.devices && response.data.devices.length > 0;
 
-      // If no devices, always redirect to device registration
-      if (!hasDevices && to.path !== '/device-register') {
-        console.log('No devices found, redirecting to device registration');
-        next('/device-register');
-        return;
-      }
+        // If no devices, always redirect to device registration
+        if (!hasDevices && to.path !== '/device-register') {
+          console.log('No devices found, redirecting to device registration');
+          next('/device-register');
+          return;
+        }
 
-      // If we have devices but no current device ID, redirect to registration
-      if (hasDevices && !deviceId && to.path !== '/device-register') {
-        console.log('No current device ID, redirecting to device registration');
-        next('/device-register');
-        return;
-      }
+        // If we have devices but no current device ID, redirect to registration
+        if (hasDevices && !deviceId && to.path !== '/device-register') {
+          console.log('No current device ID, redirecting to device registration');
+          next('/device-register');
+          return;
+        }
 
-      next();
-    } catch (error) {
-      console.error('Device check failed:', error);
-      if (error.response?.status === 401) {
-        next('/sign-in');
-        return;
-      }
-      next();
-    }
+        next();
+      })
+      .catch(error => {
+        console.error('Device check failed:', error);
+        if (error.response?.status === 401) {
+          next('/sign-in');
+          return;
+        }
+        next();
+      });
   } else {
     next();
   }

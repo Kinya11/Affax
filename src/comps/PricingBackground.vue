@@ -137,13 +137,16 @@ const initParticles = async () => {
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 0; /* Set between page background and form container */
+  z-index: 5; /* Lower z-index to ensure visibility but behind content */
 }
 
 .background-wrapper {
-  position: relative;
-  min-height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
+  height: 100%;
+  z-index: 1;
 }
 
 /* 4. Blur App Background */

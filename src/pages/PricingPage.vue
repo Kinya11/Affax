@@ -1,13 +1,25 @@
 <script setup>
 import Navbar from '@/comps/Navbar/Navbar.vue';
 import PricingBackground from '@/comps/PricingBackground.vue';
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 
 let theme = ref('light');
+const isLoaded = ref(false);
 
 function toggleTheme(newTheme) {
   theme.value = newTheme;
 }
+
+onMounted(() => {
+  // Small delay to ensure smooth animation
+  setTimeout(() => {
+    isLoaded.value = true;
+  }, 100);
+});
+
+// For development
+const isDev = import.meta.env.MODE === 'development';
+console.log('PricingPage mounted, dev mode:', isDev);
 </script>
 
 <template>
@@ -15,7 +27,7 @@ function toggleTheme(newTheme) {
     <Navbar @toggle="toggleTheme" />
     
     <!-- Pricing Section -->
-    <div :class="theme" class="pricing-section">
+    <div :class="[theme, { 'loaded': isLoaded }]" class="pricing-section">
       <h1 class="pricing-title">Choose Your Plan</h1>
       <div class="pricing-cards">
         <!-- Free Plan -->
@@ -82,9 +94,19 @@ export default {
 </script>
 
 <style scoped>
+/* Add these new animation styles */
+.pricing-section {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.pricing-section.loaded {
+  opacity: 1;
+}
+
 .pricing-section {
   text-align: center;
-  padding-top: calc(35px + 20px + 2rem); /* navbar height + navbar top margin + additional spacing */
+  padding-top: calc(35px + 20px + 1rem); /* Reduced top padding */
   padding-left: 20px;
   padding-right: 20px;
   height: 100vh;
@@ -105,29 +127,32 @@ export default {
 }
 
 .pricing-title {
-  font-size: 2.5rem;
-  margin-bottom: 40px;
+  font-size: 2.2rem; /* Slightly smaller title */
+  margin-bottom: 20px; /* Reduced margin */
   font-weight: 600;
 }
 
 .pricing-cards {
   display: flex;
   justify-content: center;
-  gap: 30px;
+  gap: 20px; /* Reduced gap */
   max-width: 1200px;
-  margin: 80px auto 0; /* Added top margin to account for navbar */
-  padding-bottom: 40px; /* Add some bottom padding for better scrolling */
+  margin: 20px auto 0; /* Reduced top margin */
+  padding-bottom: 20px; /* Reduced bottom padding */
 }
 
 .card {
   border: 1px solid var(--medium-gray);
   border-radius: 16px;
-  padding: 32px;
-  width: 320px;
+  padding: 24px; /* Reduced padding */
+  width: 300px; /* Slightly narrower cards */
   text-align: left;
   backdrop-filter: blur(10px);
   background-color: rgba(255, 255, 255, 0.7);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  min-height: 520px; /* Reduced height */
 }
 
 .card:hover {
@@ -147,7 +172,7 @@ export default {
 .plan-header {
   font-weight: 600;
   color: var(--blue-gray);
-  margin-bottom: 16px;
+  margin-bottom: 12px; /* Reduced margin */
 }
 
 .current-plan {
@@ -155,34 +180,37 @@ export default {
 }
 
 .plan-title {
-  font-size: 1.8rem;
-  margin: 16px 0;
+  font-size: 1.6rem; /* Slightly smaller title */
+  margin: 12px 0; /* Reduced margin */
   color: var(--dark-gray);
 }
 
 .plan-price {
-  font-size: 1.4rem;
-  margin-bottom: 24px;
+  font-size: 1.3rem; /* Slightly smaller price */
+  margin-bottom: 20px; /* Reduced margin */
   color: var(--app-gray);
 }
 
 .plan-features {
   list-style: none;
   padding: 0;
-  margin-bottom: 32px;
+  margin-bottom: 24px; /* Reduced margin */
+  flex-grow: 1;
 }
 
 .plan-features li {
-  margin-bottom: 12px;
+  margin-bottom: 8px; /* Reduced margin between list items */
   display: flex;
   align-items: center;
   color: var(--app-gray);
+  font-size: 0.95rem; /* Slightly smaller text */
 }
 
 .checkmark {
-  width: 20px;
-  height: 20px;
-  margin-right: 12px;
+  width: 16px; /* Slightly smaller checkmarks */
+  height: 16px;
+  margin-right: 8px;
+  filter: brightness(0);
 }
 
 .cta-button {
@@ -190,12 +218,13 @@ export default {
   background-color: var(--blue-gray);
   color: white;
   border: none;
-  padding: 14px 24px;
+  padding: 12px 20px; /* Reduced padding */
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem; /* Slightly smaller text */
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+  margin: 0;
 }
 
 .cta-button:hover {
@@ -215,13 +244,14 @@ export default {
   .pricing-cards {
     flex-direction: column;
     align-items: center;
-    gap: 20px;
-    margin-top: 100px; /* Increased top margin for mobile */
+    gap: 16px;
+    margin-top: 40px;
   }
 
   .card {
+    min-height: auto;
     width: 100%;
-    max-width: 400px;
+    max-width: 360px;
   }
 
   .best-value {

@@ -23,6 +23,33 @@ const error = ref("");
 const showPopup = ref(false);
 const googleSignInBtn = ref(null);
 const pageVisible = ref(false);
+const errorMessage = ref("");
+const googleLoaded = ref(false);
+const isLoaded = ref(false);
+
+const loadGoogleScript = async (retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      if (window.google) return;
+      
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = (e) => reject(new Error("Failed to load Google script"));
+        document.head.appendChild(script);
+      });
+      
+      return;
+    } catch (error) {
+      console.error(`Attempt ${i + 1} failed:`, error);
+      if (i === retries - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
+  }
+};
 
 const onSignIn = async () => {
   if (!email.value || !password.value) {
@@ -71,67 +98,55 @@ const onSignIn = async () => {
 
 const initializeGoogleAuth = async () => {
   try {
-    await new Promise((resolve) => {
-      if (window.google) {
-        resolve();
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      script.onload = resolve;
-      document.head.appendChild(script);
-    });
-
-    await new Promise((resolve) => {
-      const checkButton = () => {
-        const buttonElement = document.getElementById("googleSignInDiv");
-        if (buttonElement) {
-          resolve();
-        } else {
-          setTimeout(checkButton, 100);
-        }
-      };
-      checkButton();
-    });
+    await loadGoogleScript();
+    
+    if (!window.google) {
+      throw new Error("Google API not loaded");
+    }
 
     window.google.accounts.id.initialize({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      callback: handleCredentialResponse
+      callback: handleCredentialResponse,
+      auto_select: false,
+      cancel_on_tap_outside: true
     });
 
-    window.google.accounts.id.renderButton(
-      document.getElementById("googleSignInDiv"),
-      { 
-        theme: "filled_black", 
-        size: "large", 
-        width: "300",
-        text: "signin_with",
-        shape: "rectangular"
-      }
-    );
+    const buttonContainer = document.getElementById("googleSignInDiv");
+    if (buttonContainer) {
+      window.google.accounts.id.renderButton(
+        buttonContainer,
+        { 
+          theme: "filled_black", 
+          size: "large",
+          width: 300,
+          text: "continue_with",
+          shape: "rectangular"
+        }
+      );
+      // Set googleLoaded to true after button is rendered
+      googleLoaded.value = true;
+    }
   } catch (error) {
     console.error("Failed to initialize Google Auth:", error);
-    error.value = "Failed to initialize Google Sign-In";
+    errorMessage.value = "Failed to initialize Google Sign-In";
   }
 };
 
 const handleCredentialResponse = async (response) => {
   try {
-    loading.value = true; // Add loading state
-    const deviceId = generateDeviceId();
+    loading.value = true;
+    const deviceId = await generateDeviceId();
     
     if (!deviceId) {
       throw new Error("Failed to generate device ID");
     }
     
+    // Store device ID before making the request
     storeDeviceId(deviceId);
 
     const res = await api.post("/api/auth/google-login", {
       id_token: response.credential,
-      deviceId: deviceId.toString() // Ensure deviceId is a string
+      deviceId
     });
 
     if (res.data.token) {
@@ -142,6 +157,11 @@ const handleCredentialResponse = async (response) => {
         userStore.setUser(res.data.user);
       }
 
+      // Update device ID if server returns a different one
+      if (res.data.deviceId && res.data.deviceId !== deviceId) {
+        storeDeviceId(res.data.deviceId);
+      }
+
       if (res.data.requiresDeviceRegistration) {
         router.push({ name: "DeviceRegister" });
       } else {
@@ -149,8 +169,16 @@ const handleCredentialResponse = async (response) => {
       }
     }
   } catch (error) {
-    console.error("Google sign-in error:", error);
-    error.value = error.response?.data?.value || error.response?.data?.error || "Google sign-in failed";
+    console.error("Google sign-in error:", {
+      message: error.message,
+      response: error.response?.data,
+      config: {
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+        method: error.config?.method
+      }
+    });
+    errorMessage.value = "Failed to authenticate with Google. Please try again.";
   } finally {
     loading.value = false;
   }
@@ -165,8 +193,10 @@ onMounted(() => {
     pageVisible.value = true;
   }, 0);
   
+  // Remove the delay for Google auth initialization
+  initializeGoogleAuth();
   setTimeout(() => {
-    initializeGoogleAuth();
+    isLoaded.value = true;
   }, 100);
 });
 </script>
@@ -188,7 +218,7 @@ onMounted(() => {
       </div>
     </nav>
     
-    <main class="main-content">
+    <main :class="{ 'loaded': isLoaded }" class="main-content">
       <div class="sign-in-container" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
         <h1 id="setup-title">Sign In</h1>
         <p>Sign in using your email or password</p>
@@ -230,22 +260,32 @@ onMounted(() => {
           <div class="line"></div>
         </div>
         
-        <div id="googleSignInDiv" ref="googleSignInBtn" class="google-sign-in-button"></div>
+        <!-- Add placeholder for Google button -->
+        <div class="google-button-container">
+          <div class="google-button-placeholder" v-if="!googleLoaded"></div>
+          <div id="googleSignInDiv" ref="googleSignInBtn" :class="{ 'visible': googleLoaded }"></div>
+        </div>
       </div>
     </main>
   </div>
 </template>
 
 <style scoped>
+:deep(#particles-background) {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1; /* Changed to -1 to be behind all content */
+}
 
 #setup-title {
   color: #000;
-  font-size: 30px;
-  font-weight: 500;
-  margin-bottom: 0px;
+  font-size: 24px;
+  margin-bottom: 15px;
   font-weight: 500;
 }
-
 .sign-in-wrapper {
   position: fixed;
   top: 0;
@@ -267,7 +307,7 @@ onMounted(() => {
   height: 100%;
   width: auto;
   object-fit: contain;
-  filter: brightness(0); /* Makes logo black */
+  filter: brightness(0);
 }
 
 .logo-container:hover {
@@ -287,7 +327,7 @@ nav {
   border-width: 1px;
   border-radius: 5px;
   padding: 10px;
-  z-index: 1000;
+  z-index: 100; /* Increased to 100 to stay above particles but below modal if needed */
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   background-color: rgba(255, 255, 255, 0.5);
@@ -305,6 +345,15 @@ nav {
   justify-content: center;
   align-items: center;
   overflow: hidden;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  z-index: 10; /* Added z-index to ensure it's above particles */
+}
+
+.main-content.loaded {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .sign-in-container {
@@ -318,11 +367,11 @@ nav {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   position: relative;
-  z-index: 20;
+  z-index: 10; /* Same as parent to maintain hierarchy */
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px; /* Reduced gap from 20px to 15px */
+  gap: 20px;
 }
 
 .sign-in-container h1 {
@@ -413,6 +462,7 @@ nav {
   height: 40px !important; /* Increased height and added !important */
   min-height: 40px !important; /* Added min-height to ensure consistency */
   border-radius: 5px;
+  z-index: -1;
 }
 
 
@@ -491,5 +541,35 @@ nav {
     opacity: 0;
     transform: translateY(-20px) translateZ(0);
   }
+}
+
+/* Add to your existing styles */
+.google-button-container {
+  position: relative;
+  height: 40px; /* Match Google button height */
+  margin: 10px 0;
+}
+
+.google-button-placeholder {
+  width: 300px;
+  height: 40px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  animation: pulse 1.5s infinite;
+}
+
+#googleSignInDiv {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+#googleSignInDiv.visible {
+  opacity: 1;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.6; }
 }
 </style>
