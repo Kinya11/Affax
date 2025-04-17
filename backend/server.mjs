@@ -1213,17 +1213,18 @@ app.get("/api/devices", authenticateToken, async (req, res) => {
 app.get("/api/lists", authenticateToken, async (req, res) => {
   try {
     console.log("Fetching lists for user:", req.user.userId);
-    const [lists] = await pool.query("SELECT * FROM lists WHERE user_id = ?", [
-      req.user.userId,
-    ]);
-    console.log("Found lists:", lists);
-    res.json(lists);
+    const [lists] = await pool.query(
+      "SELECT * FROM lists WHERE user_id = ?", 
+      [req.user.userId]
+    );
+    
+    // Always return an array, even if empty
+    res.json(lists || []);
   } catch (error) {
     console.error("List fetch error:", error);
     res.status(500).json({
       error: "Failed to load lists",
-      details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+      details: process.env.NODE_ENV === "development" ? error.message : undefined
     });
   }
 });

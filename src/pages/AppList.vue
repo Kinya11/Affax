@@ -79,7 +79,7 @@ const handleInstallError = (error, listId) => {
 
 const checkDeviceRegistration = async () => {
   try {
-    const deviceId = getStoredDeviceId();
+    const deviceId = await getStoredDeviceId(); // Add await here
     const token = localStorage.getItem('token');
 
     console.log('AppList checking device:', deviceId);

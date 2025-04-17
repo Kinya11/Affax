@@ -367,11 +367,12 @@ nav {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   position: relative;
-  z-index: 10; /* Same as parent to maintain hierarchy */
+  z-index: 20;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
+  margin-top: -20px; /* Added to move it up */
 }
 
 .sign-in-container h1 {

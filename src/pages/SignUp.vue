@@ -5,6 +5,7 @@ import api from '@/api';
 import { useToast } from 'vue-toastification';
 import { generateDeviceId, storeDeviceId, getStoredDeviceId } from '@/utils/device';
 import PricingBackground from '@/comps/PricingBackground.vue';
+import { useListStore } from '@/stores/listStore';
 
 const router = useRouter();
 const toast = useToast();
@@ -18,151 +19,88 @@ const onSignIn = () => {
 };
 
 onMounted(() => {
-  setTimeout(() => {
-    pageVisible.value = true;
-  }, 0);
-  
   // Initialize Google Sign-In immediately
   initializeGoogleSignIn();
-  setTimeout(() => {
+  
+  // Handle page visibility after a micro-task
+  queueMicrotask(() => {
+    pageVisible.value = true;
+  });
+  
+  // Set overall page loaded state
+  requestAnimationFrame(() => {
     isLoaded.value = true;
-  }, 100);
+  });
 });
 
 // Form data with validation states
-const formData = reactive({
-  firstName: "",
-  lastName: "",
-  email: "",
-  password: "",
-  careerField: "",
-  dateOfBirth: "",
+const formData = ref({
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
+  careerField: '',
+  dateOfBirth: '',
   agreeToTerms: false,
   receiveEmails: false
-});
-
-const validation = reactive({
-  isEmailValid: false,
-  isPasswordValid: false
 });
 
 const loading = ref(false);
 const errorMessage = ref("");
 
-// Password validation computed properties
-const hasMinLength = computed(() => formData.password.length >= 8);
-const hasNumber = computed(() => /\d/.test(formData.password));
-const hasSpecialChar = computed(() => /[!@#$%^&*]/.test(formData.password));
-const hasUpperCase = computed(() => /[A-Z]/.test(formData.password));
-
-const showPasswordRequirements = ref(false);
-
-// Enhanced validation
-const validateForm = () => {
-  errorMessage.value = "";
-  
-  // Email validation with better regex
-  const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  validation.isEmailValid = emailRegex.test(formData.email);
-
-  // Password validation (min 8 chars, 1 number, 1 special char, 1 uppercase)
-  const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
-  validation.isPasswordValid = passwordRegex.test(formData.password);
-
-  // Age validation (minimum 13 years old)
-  if (formData.dateOfBirth) {
-    const birthDate = new Date(formData.dateOfBirth);
-    const today = new Date();
-    const age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    
-    validation.isAdult = age > 13 || (age === 13 && monthDiff >= 0);
-  }
-
-  if (!validation.isEmailValid) {
-    errorMessage.value = "Please enter a valid email address";
-    return false;
-  }
-
-  if (!validation.isPasswordValid) {
-    errorMessage.value = "Password must be at least 8 characters long and contain at least one uppercase letter, one number, and one special character";
-    return false;
-  }
-
-  if (!validation.isAdult) {
-    errorMessage.value = "You must be at least 13 years old to register";
-    return false;
-  }
-
-  if (!formData.agreeToTerms) {
-    errorMessage.value = "You must agree to the terms and conditions";
-    return false;
-  }
-
-  return true;
-};
-
+// Form submission handler
 const onFormSubmit = async () => {
-  if (!validateForm()) {
-    errorMessage.value = "Please fix validation errors";
-    return;
-  }
-
-  loading.value = true;
-  errorMessage.value = "";
-
   try {
-    const deviceId = getStoredDeviceId() || generateDeviceId();
+    loading.value = true;
+    errorMessage.value = '';
+
+    const deviceId = await generateDeviceId();
     storeDeviceId(deviceId);
 
-    const response = await api.post("/api/auth/register", {
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      email: formData.email,
-      password: formData.password,
-      careerField: formData.careerField,
-      receiveEmails: formData.receiveEmails,
+    // First try to register
+    const registerResponse = await api.post("/api/auth/register", {
+      firstName: formData.value.firstName,
+      lastName: formData.value.lastName,
+      email: formData.value.email,
+      password: formData.value.password,
+      careerField: formData.value.careerField || undefined,
+      dateOfBirth: formData.value.dateOfBirth,
+      receiveEmails: formData.value.receiveEmails,
+      agreeToTerms: formData.value.agreeToTerms,
       deviceId
     });
 
-    // Auto-login after successful registration
-    const loginResponse = await api.post("/api/auth/login", {
-      email: formData.email,
-      password: formData.password,
-      deviceId
-    });
+    // If registration successful, proceed with login
+    if (registerResponse.data.success) {
+      const loginResponse = await api.post("/api/auth/login", {
+        email: formData.value.email,
+        password: formData.value.password,
+        deviceId
+      });
 
-    localStorage.setItem("token", loginResponse.data.token);
-    toast.success("Registration successful! Redirecting...");
-    
-    // Redirect to device registration if needed
-    if (loginResponse.data.requiresDeviceRegistration) {
-      router.push({ name: "DeviceRegister" });
-    } else {
-      router.push({ name: "AppList" });
+      if (loginResponse.data.token) {
+        localStorage.setItem("token", loginResponse.data.token);
+        
+        // Reset store without using $reset
+        const listStore = useListStore();
+        listStore.lists = [];
+        
+        toast.success("Registration successful! Redirecting...");
+        router.push({ name: "AppList" });
+      }
     }
-
   } catch (error) {
     console.error("Registration error:", error);
-    handleRegistrationError(error);
+    if (error.response?.status === 409) {
+      errorMessage.value = "This email is already registered";
+    } else if (error.response?.status === 500) {
+      errorMessage.value = "Server error. Please try again later";
+    } else {
+      errorMessage.value = error.response?.data?.error || "Registration failed";
+    }
   } finally {
     loading.value = false;
   }
-};
-
-// Enhanced error handling
-const handleRegistrationError = (error) => {
-  const errorMap = {
-    "EMAIL_EXISTS": "This email is already registered",
-    "INVALID_BIRTHDATE": "You must be at least 13 years old",
-    "WEAK_PASSWORD": "Password must contain at least 8 characters, one number, and one special character",
-    "TERMS_NOT_ACCEPTED": "You must accept the terms and conditions"
-  };
-
-  const serverErrorCode = error.response?.data?.errorCode;
-  errorMessage.value = errorMap[serverErrorCode] || 
-                      error.response?.data?.error || 
-                      "Registration failed. Please try again.";
 };
 
 // Google Sign-In with device ID
@@ -233,6 +171,7 @@ const initializeGoogleSignIn = async () => {
         auto_select: false
       });
 
+      // Pre-render the button container
       const buttonElement = document.getElementById("google-signin-btn");
       if (buttonElement) {
         window.google.accounts.id.renderButton(buttonElement, { 
@@ -242,8 +181,13 @@ const initializeGoogleSignIn = async () => {
           text: "continue_with",
           logo_alignment: "center"
         });
-        // Set googleLoaded to true after button is rendered
-        googleLoaded.value = true;
+        
+        // Use requestAnimationFrame for smoother transition
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            googleLoaded.value = true;
+          });
+        });
       }
     }
   } catch (error) {
@@ -285,17 +229,15 @@ const initializeGoogleSignIn = async () => {
                     class="form-input"
                     v-model="formData.email"
                     type="email"
-                    placeholder="Email Address"
+                    placeholder="Email Address *"
                     required
                   />
                   <input
                     class="form-input"
                     v-model="formData.password"
                     type="password"
-                    placeholder="Password"
+                    placeholder="Password *"
                     required
-                    @focus="showPasswordRequirements = true"
-                    @blur="showPasswordRequirements = false"
                   />
                 </div>
 
@@ -304,14 +246,14 @@ const initializeGoogleSignIn = async () => {
                     class="form-input"
                     v-model="formData.firstName"
                     type="text"
-                    placeholder="Legal First Name"
+                    placeholder="Legal First Name *"
                     required
                   />
                   <input
                     class="form-input"
                     v-model="formData.lastName"
                     type="text"
-                    placeholder="Legal Last Name"
+                    placeholder="Legal Last Name *"
                     required
                   />
                 </div>
@@ -327,7 +269,7 @@ const initializeGoogleSignIn = async () => {
                     class="form-input"
                     v-model="formData.dateOfBirth"
                     type="date"
-                    placeholder="Date of Birth"
+                    placeholder="Date of Birth *"
                     required
                   />
                 </div>
@@ -336,14 +278,23 @@ const initializeGoogleSignIn = async () => {
               <!-- Checkboxes -->
               <div class="checkbox-group">
                 <div class="form-checkbox">
-                  <input type="checkbox" v-model="formData.agreeToTerms" id="agreeToTerms" />
+                  <input 
+                    type="checkbox" 
+                    v-model="formData.agreeToTerms" 
+                    id="agreeToTerms" 
+                    required
+                  />
                   <label for="agreeToTerms">
                     I hereby acknowledge that I have read and agree with the Append
-                    privacy policy and terms of service.
+                    privacy policy and terms of service. *
                   </label>
                 </div>
                 <div class="form-checkbox">
-                  <input type="checkbox" v-model="formData.receiveEmails" id="receiveEmails" />
+                  <input 
+                    type="checkbox" 
+                    v-model="formData.receiveEmails" 
+                    id="receiveEmails"
+                  />
                   <label for="receiveEmails">
                     I would like to receive emails from Append that may include
                     promotions, updates, and sponsorships.
@@ -449,7 +400,7 @@ const initializeGoogleSignIn = async () => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   position: relative;
   z-index: 20;
-  margin-top: -40px;
+  margin-top: 0px; /* Changed from -40px to 0px to move it down */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -462,7 +413,6 @@ nav {
   right: 1%;
   width: 98%;
   z-index: 30;
-  /* ... rest of your nav styles ... */
 }
 
 /* If you need scrollbar styling for the form container */
@@ -693,39 +643,41 @@ h1 {
 .google-button-container {
   position: relative;
   height: 40px;
-  width: 300px;
-  margin: 0 auto;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  margin: 10px 0;
+  width: 300px; /* Fixed width to match Google button */
 }
 
 .google-button-placeholder {
-  width: 300px;
-  height: 40px;
+  width: 100%;
+  height: 100%;
   background: #f0f0f0;
   border-radius: 4px;
-  animation: pulse 1.5s infinite;
+  opacity: 0.6;
 }
 
 #google-signin-btn {
-  opacity: 0;
-  transition: opacity 0.3s ease;
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  opacity: 0;
+  transition: opacity 0.2s ease; /* Faster transition */
 }
 
 #google-signin-btn.visible {
   opacity: 1;
 }
 
+/* Optional: Add a smoother placeholder animation */
 @keyframes pulse {
   0% { opacity: 0.6; }
   50% { opacity: 0.8; }
   100% { opacity: 0.6; }
+}
+
+.google-button-placeholder {
+  animation: pulse 1.5s infinite;
 }
 
 .checkbox-group {
