@@ -35,30 +35,54 @@ onMounted(() => {
 
 // Form data with validation states
 const formData = ref({
-  firstName: '',
-  lastName: '',
   email: '',
   password: '',
-  careerField: '',
+  firstName: '',
+  lastName: '',
   dateOfBirth: '',
-  agreeToTerms: false,
-  receiveEmails: false
+  careerField: '',
+  receiveEmails: false,
+  agreeToTerms: false
 });
 
 const loading = ref(false);
 const errorMessage = ref("");
 
+const validateForm = () => {
+  if (!formData.value.email || !formData.value.password) {
+    errorMessage.value = "Email and password are required";
+    return false;
+  }
+  if (!formData.value.firstName || !formData.value.lastName) {
+    errorMessage.value = "First and last name are required";
+    return false;
+  }
+  if (!formData.value.dateOfBirth) {
+    errorMessage.value = "Date of birth is required";
+    return false;
+  }
+  if (!formData.value.agreeToTerms) {
+    errorMessage.value = "You must agree to the terms";
+    return false;
+  }
+  return true;
+};
+
 // Form submission handler
 const onFormSubmit = async () => {
   try {
+    if (!validateForm()) {
+      return;
+    }
+
     loading.value = true;
     errorMessage.value = '';
 
     const deviceId = await generateDeviceId();
     storeDeviceId(deviceId);
 
-    // First try to register
-    const registerResponse = await api.post("/api/auth/register", {
+    // Log the request payload for debugging
+    const payload = {
       firstName: formData.value.firstName,
       lastName: formData.value.lastName,
       email: formData.value.email,
@@ -68,9 +92,20 @@ const onFormSubmit = async () => {
       receiveEmails: formData.value.receiveEmails,
       agreeToTerms: formData.value.agreeToTerms,
       deviceId
+    };
+    
+    console.log("Registration payload:", {
+      ...payload,
+      password: '[REDACTED]'
     });
 
-    // If registration successful, proceed with login
+    const registerResponse = await api.post("/api/auth/register", payload);
+
+    console.log("Registration response:", {
+      status: registerResponse.status,
+      data: registerResponse.data
+    });
+
     if (registerResponse.data.success) {
       const loginResponse = await api.post("/api/auth/login", {
         email: formData.value.email,
@@ -81,7 +116,6 @@ const onFormSubmit = async () => {
       if (loginResponse.data.token) {
         localStorage.setItem("token", loginResponse.data.token);
         
-        // Reset store without using $reset
         const listStore = useListStore();
         listStore.lists = [];
         
@@ -90,13 +124,31 @@ const onFormSubmit = async () => {
       }
     }
   } catch (error) {
-    console.error("Registration error:", error);
-    if (error.response?.status === 409) {
-      errorMessage.value = "This email is already registered";
-    } else if (error.response?.status === 500) {
-      errorMessage.value = "Server error. Please try again later";
+    console.error("Registration error:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+    
+    // Handle specific error cases
+    if (error.response?.status === 400) {
+      const details = error.response.data.details;
+      if (details) {
+        // Show which fields are missing
+        const missingFields = Object.entries(details)
+          .filter(([_, value]) => !value)
+          .map(([field]) => field)
+          .join(', ');
+        errorMessage.value = `Missing required fields: ${missingFields}`;
+      } else {
+        errorMessage.value = error.response.data.error || "Please check your input and try again.";
+      }
+    } else if (error.response?.status === 429) {
+      errorMessage.value = "Too many registration attempts. Please try again in an hour.";
+    } else if (error.response?.status === 409) {
+      errorMessage.value = "This email is already registered.";
     } else {
-      errorMessage.value = error.response?.data?.error || "Registration failed";
+      errorMessage.value = "Registration failed. Please try again later.";
     }
   } finally {
     loading.value = false;
@@ -219,7 +271,7 @@ const initializeGoogleSignIn = async () => {
               Please make sure all information entered below is accurate and complete,
               as outlined in the terms of service.
             </p>
-            <form @submit.prevent="onFormSubmit">
+            <form @submit.prevent="onFormSubmit" class="signup-form">
               <div v-if="errorMessage" class="error-message">{{ errorMessage }}</div>
               
               <!-- Input Fields -->
@@ -307,7 +359,7 @@ const initializeGoogleSignIn = async () => {
                 <button 
                   id="create-account-button" 
                   type="submit" 
-                  :disabled="loading"
+                  :disabled="loading || !formData.agreeToTerms"
                   class="primary-button"
                 >
                   <span v-if="loading">Loading...</span>

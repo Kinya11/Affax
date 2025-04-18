@@ -96,8 +96,12 @@ export default {
 <style scoped>
 /* Add these new animation styles */
 .pricing-section {
+  margin-top: 20px;
   opacity: 0;
   transition: opacity 0.2s ease;
+  position: relative;
+  z-index: 10; /* Added to ensure content stays above particles */
+  overflow: hidden;
 }
 
 .pricing-section.loaded {
@@ -106,7 +110,7 @@ export default {
 
 .pricing-section {
   text-align: center;
-  padding-top: calc(35px + 20px + 1rem); /* Reduced top padding */
+  padding-top: calc(35px + 20px + 1rem);
   padding-left: 20px;
   padding-right: 20px;
   height: 100vh;
@@ -118,6 +122,22 @@ export default {
   bottom: 0;
 }
 
+/* Ensure PricingBackground particles stay behind */
+:deep(#particles-background) {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1; /* Behind everything */
+}
+
+/* Navbar should be above particles but below modals if any */
+:deep(.navbar) {
+  position: fixed;
+  z-index: 100; /* Higher than content */
+}
+
 .pricing-section.dark {
   color: var(--text-color-dark);
 }
@@ -125,10 +145,9 @@ export default {
 .pricing-section.light {
   color: var(--text-color-light);
 }
-
 .pricing-title {
   font-size: 2.2rem; /* Slightly smaller title */
-  margin-bottom: 20px; /* Reduced margin */
+  margin-bottom: 60px; /* Reduced margin */
   font-weight: 600;
 }
 
@@ -144,15 +163,17 @@ export default {
 .card {
   border: 1px solid var(--medium-gray);
   border-radius: 16px;
-  padding: 24px; /* Reduced padding */
-  width: 300px; /* Slightly narrower cards */
+  padding: 24px;
+  width: 300px;
   text-align: left;
   backdrop-filter: blur(10px);
   background-color: rgba(255, 255, 255, 0.7);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   display: flex;
   flex-direction: column;
-  min-height: 520px; /* Reduced height */
+  min-height: 520px;
+  position: relative;
+  z-index: 10; /* Ensure cards stay above particles */
 }
 
 .card:hover {

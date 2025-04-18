@@ -181,7 +181,7 @@ const setPaymentMethod = (method) => {
   border-radius: 8px;
   padding: 12px 20px;
   box-shadow: #0000003b 0px 4px 4px;
-  z-index: 10000;
+  z-index: 100;
   backdrop-filter: blur(10px);
   height: 35px;
 }
@@ -195,7 +195,7 @@ const setPaymentMethod = (method) => {
   max-width: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   position: relative;
-  z-index: 1;
+  z-index: 100;
   margin-top: calc(35px + 20px + 2rem);
 }
 

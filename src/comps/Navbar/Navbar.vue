@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import NavbarElement from "./NavbarElement.vue";
 import ThemeToggleSwitch from "./ThemeToggleSwitch.vue";
@@ -14,6 +14,7 @@ const lists = ref([]);
 const toast = useToast();
 const isUpgradeLoading = ref(false);
 const subscriptionStatus = ref(null);
+const route = useRoute();
 
 // Add this function to fetch lists
 async function fetchLists() {
@@ -116,7 +117,7 @@ const handleLogoClick = () => {
 const isOrgDropdownOpen = ref(false);
 const isListsDropdownOpen = ref(false);
 const isAccountDropdownOpen = ref(false);
-const emit = defineEmits();
+const emit = defineEmits(['toggled']);
 
 
 // Handle hover effect for dropdowns
@@ -156,9 +157,18 @@ function onLeave(id) {
 }
 
 // Theme management
-let theme = ref("light");
+let theme = ref(route.path === "/pricing-page" ? "light" : "dark");
 let arrowSrc = ref("/src/assets/Arrow_Black.svg");
 let logoSrc = ref("/src/assets/LogoDark.svg");
+
+watch(
+  () => route.path,
+  (newPath) => {
+    if (newPath === "/pricing-page") {
+      theme.value = "light";
+    }
+  }
+);
 
 watch(theme, (newTheme) => {
   emit("toggled", theme.value);
@@ -179,10 +189,7 @@ watch(theme, (newTheme) => {
 // Method to update the theme
 function toggleTheme(newTheme) {
   theme.value = newTheme;
-}
-
-if (window.location.pathname == "/pricing-page") {
-  theme = "light";
+  emit('toggled', newTheme);
 }
 
 // Add function to handle upgrade click
@@ -228,26 +235,7 @@ const handleUpgradeClick = async () => {
       <img :src="logoSrc" alt="Logo" class="logo" />
     </div>
     <div class="nav-element" id="nav-center">
-      <span
-        :class="['nav-element-container', theme]"
-        @mouseover="onHover('orgs')"
-        @mouseleave="onLeave('orgs')"
-      >
-        <div class="dropdown-actuator">
-          <span :class="['nav-element', theme]">Organizations</span>
-          <img
-            class="Arrow"
-            :src="arrowSrc"
-            alt="arrow"
-            width="10px"
-            id="orgs-arrow"
-          />
-        </div>
-        <div
-          :class="['nav-dropdown', theme, { show: isOrgDropdownOpen }]"
-          id="orgs"
-        ></div>
-      </span>
+      <!-- Removed Organizations dropdown -->
       <span
         :class="['nav-element-container', theme]"
         @mouseover="onHover('lists')"
@@ -267,7 +255,13 @@ const handleUpgradeClick = async () => {
           :class="['nav-dropdown', theme, { show: isListsDropdownOpen }]"
           id="lists"
         >
+          <div v-if="lists.length === 0" :class="['router-link', theme]">
+            <NavbarElement :theme="theme" :arrowSrc="arrowSrc">
+              No lists
+            </NavbarElement>
+          </div>
           <div
+            v-else
             v-for="list in lists" 
             :key="list.id"
             :class="['router-link', theme]"
@@ -409,7 +403,7 @@ const handleUpgradeClick = async () => {
 }
 
 #nav-center {
-  width: 260px;
+  width: 130px; /* Reduced from 260px */
   margin: auto;
   gap: 75px;
 }

@@ -2,7 +2,6 @@
 import { config } from "dotenv";
 config({ path: "server_info.env" });
 import express from "express";
-import mysql from "mysql2/promise";
 import bodyParser from "body-parser";
 import cors from "cors";
 import multer from "multer";
@@ -22,7 +21,8 @@ import { promisify } from 'util';
 import rateLimit from 'express-rate-limit';
 import geoip from 'geoip-lite';
 import https from 'https';
-import subscriptionRoutes from './routes/subscriptionRoutes.mjs';
+import subscriptionRoutes from './routes/subscriptionRoutes.mjs';  // Note the .mjs extension
+import pool from './db.mjs';  // Import the shared pool
 const { lookup } = geoip;
 
 const execAsync = promisify(exec);
@@ -49,17 +49,6 @@ const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-
-// Database connection pool
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
 
 // Make pool available to routes
 app.locals.pool = pool;
@@ -643,10 +632,12 @@ class InstallationManager {
 // Rate limiting configuration
 const createAccountLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour window
-  max: 5, // limit each IP to 5 account creations per window
+  max: process.env.NODE_ENV === 'development' ? 20 : 5, // Higher limit in development
   message: {
     error: "Too many accounts created. Please try again later.",
-    details: "Maximum 5 accounts per hour per IP allowed"
+    details: process.env.NODE_ENV === 'development' 
+      ? "Maximum 20 accounts per hour per IP allowed in development"
+      : "Maximum 5 accounts per hour per IP allowed"
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -735,6 +726,15 @@ app.get("/api/db-health", async (req, res) => {
 // Auth Routes
 app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
   try {
+    console.log("Registration attempt:", {
+      body: {
+        ...req.body,
+        password: '[REDACTED]' // Don't log the actual password
+      },
+      deviceId: req.headers['x-device-id'],
+      ip: req.ip
+    });
+
     const {
       firstName,
       lastName,
@@ -745,7 +745,17 @@ app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
       receiveEmails,
     } = req.body;
 
+    // Log validation state
+    console.log("Validation check:", {
+      hasFirstName: !!firstName,
+      hasLastName: !!lastName,
+      hasEmail: !!email,
+      hasPassword: !!password,
+      hasDateOfBirth: !!dateOfBirth
+    });
+
     if (isSuspiciousRequest(req)) {
+      console.log("Suspicious request detected");
       return res.status(403).json({ 
         error: "Registration denied",
         details: "Suspicious activity detected"
@@ -754,7 +764,17 @@ app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
 
     // Validate required fields
     if (!firstName || !lastName || !email || !password || !dateOfBirth) {
-      return res.status(400).json({ error: "Missing required fields" });
+      console.log("Missing required fields");
+      return res.status(400).json({ 
+        error: "Missing required fields",
+        details: {
+          firstName: !firstName,
+          lastName: !lastName,
+          email: !email,
+          password: !password,
+          dateOfBirth: !dateOfBirth
+        }
+      });
     }
 
     // Check if user already exists
@@ -764,10 +784,9 @@ app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
     );
 
     if (existing.length) {
+      console.log("Email already registered:", email);
       return res.status(409).json({ error: "Email already registered" });
     }
-
-    // Removed age validation check
 
     const hashedPassword = await argon2.hash(password);
 
@@ -786,6 +805,11 @@ app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
       ]
     );
 
+    console.log("User registered successfully:", {
+      userId: result.insertId,
+      email: email
+    });
+
     await pool.query(
       `INSERT INTO user_activity_log (user_id, activity_type, ip_address, user_agent)
        VALUES (?, 'registration', ?, ?)`,
@@ -793,11 +817,16 @@ app.post("/api/auth/register", createAccountLimiter, async (req, res) => {
     );
 
     res.status(201).json({
+      success: true,
       message: "Registration successful",
       userId: result.insertId,
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    console.error("Registration error:", {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
     res.status(500).json({
       error: "Registration failed",
       details: process.env.NODE_ENV === "development" ? error.message : undefined,
@@ -809,8 +838,8 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password, deviceId } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required" });
+    if (!email || !password || !deviceId) {
+      return res.status(400).json({ error: "Email, password and device_id required" });
     }
 
     const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [

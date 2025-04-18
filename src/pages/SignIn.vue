@@ -1,15 +1,15 @@
 <script setup>
-import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import { useUserStore } from '@/stores/user';
-import api from '@/api';
-import { generateDeviceId, storeDeviceId } from '@/utils/device';
+import { ref, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { useUserStore } from "@/stores/user";
+import api from "@/api";
+import { generateDeviceId, storeDeviceId } from "@/utils/device";
 import BlueGrayButton from "@/comps/BlueGrayButton.vue";
-import PricingBackground from '@/comps/PricingBackground.vue';
-import PopupModal from '@/comps/SignInModal.vue';
-import Navbar from '@/comps/Navbar/Navbar.vue';
+import PricingBackground from "@/comps/PricingBackground.vue";
+import PopupModal from "@/comps/SignInModal.vue";
+import Navbar from "@/comps/Navbar/Navbar.vue";
 
-let theme = ref('light');
+let theme = ref("light");
 function toggleTheme(newTheme) {
   theme.value = newTheme;
 }
@@ -31,22 +31,23 @@ const loadGoogleScript = async (retries = 3) => {
   for (let i = 0; i < retries; i++) {
     try {
       if (window.google) return;
-      
+
       await new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = "https://accounts.google.com/gsi/client";
         script.async = true;
         script.defer = true;
         script.onload = resolve;
-        script.onerror = (e) => reject(new Error("Failed to load Google script"));
+        script.onerror = (e) =>
+          reject(new Error("Failed to load Google script"));
         document.head.appendChild(script);
       });
-      
+
       return;
     } catch (error) {
       console.error(`Attempt ${i + 1} failed:`, error);
       if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
     }
   }
 };
@@ -62,19 +63,46 @@ const onSignIn = async () => {
 
   try {
     const deviceId = generateDeviceId();
-    storeDeviceId(deviceId);
+    console.log("Generated Device ID:", deviceId); // Add this line
+
+    if (!deviceId) {
+      error.value = "Failed to generate device ID";
+      return;
+    }
+
+    try {
+      const response = await api.post("/api/auth/login", {
+        email: email.value,
+        password: password.value,
+        deviceId,
+      });
+
+      console.log("API Login Response:", response.data);
+    } catch (error) {
+      console.error("Sign-in error:", error);
+      if (error.response?.status === 404) {
+        showPopup.value = true;
+      } else {
+        error.value = error.response?.data?.error || "Authentication failed";
+      }
+    }
+
+    // Log the device ID to ensure it's not empty
+    console.log("Generated Device ID:", deviceId);
+
+    storeDeviceId(deviceId); // Ensure this function stores the device ID properly
 
     const response = await api.post("/api/auth/login", {
       email: email.value,
       password: password.value,
-      deviceId: deviceId
+      deviceId: deviceId,
     });
 
     if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-      
+      localStorage.setItem("token", response.data.token);
+
       if (response.data.user) {
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        localStorage.setItem("user", JSON.stringify(response.data.user));
         userStore.setUser(response.data.user);
       }
 
@@ -99,7 +127,7 @@ const onSignIn = async () => {
 const initializeGoogleAuth = async () => {
   try {
     await loadGoogleScript();
-    
+
     if (!window.google) {
       throw new Error("Google API not loaded");
     }
@@ -108,21 +136,18 @@ const initializeGoogleAuth = async () => {
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       callback: handleCredentialResponse,
       auto_select: false,
-      cancel_on_tap_outside: true
+      cancel_on_tap_outside: true,
     });
 
     const buttonContainer = document.getElementById("googleSignInDiv");
     if (buttonContainer) {
-      window.google.accounts.id.renderButton(
-        buttonContainer,
-        { 
-          theme: "filled_black", 
-          size: "large",
-          width: 300,
-          text: "continue_with",
-          shape: "rectangular"
-        }
-      );
+      window.google.accounts.id.renderButton(buttonContainer, {
+        theme: "filled_black",
+        size: "large",
+        width: 300,
+        text: "continue_with",
+        shape: "rectangular",
+      });
       // Set googleLoaded to true after button is rendered
       googleLoaded.value = true;
     }
@@ -136,24 +161,24 @@ const handleCredentialResponse = async (response) => {
   try {
     loading.value = true;
     const deviceId = await generateDeviceId();
-    
+
     if (!deviceId) {
       throw new Error("Failed to generate device ID");
     }
-    
+
     // Store device ID before making the request
     storeDeviceId(deviceId);
 
     const res = await api.post("/api/auth/google-login", {
       id_token: response.credential,
-      deviceId
+      deviceId,
     });
 
     if (res.data.token) {
-      localStorage.setItem('token', res.data.token);
-      
+      localStorage.setItem("token", res.data.token);
+
       if (res.data.user) {
-        localStorage.setItem('user', JSON.stringify(res.data.user));
+        localStorage.setItem("user", JSON.stringify(res.data.user));
         userStore.setUser(res.data.user);
       }
 
@@ -175,10 +200,11 @@ const handleCredentialResponse = async (response) => {
       config: {
         url: error.config?.url,
         baseURL: error.config?.baseURL,
-        method: error.config?.method
-      }
+        method: error.config?.method,
+      },
     });
-    errorMessage.value = "Failed to authenticate with Google. Please try again.";
+    errorMessage.value =
+      "Failed to authenticate with Google. Please try again.";
   } finally {
     loading.value = false;
   }
@@ -192,7 +218,7 @@ onMounted(() => {
   setTimeout(() => {
     pageVisible.value = true;
   }, 0);
-  
+
   // Remove the delay for Google auth initialization
   initializeGoogleAuth();
   setTimeout(() => {
@@ -204,7 +230,7 @@ onMounted(() => {
 <template>
   <div class="sign-in-wrapper">
     <PricingBackground styleType="particles" />
-    
+
     <!-- Move nav outside of main-content to match SignUp -->
     <nav>
       <div class="logo-container" @click="router.push('/')">
@@ -217,14 +243,17 @@ onMounted(() => {
         </span>
       </div>
     </nav>
-    
-    <main :class="{ 'loaded': isLoaded }" class="main-content">
-      <div class="sign-in-container" :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }">
+
+    <main :class="{ loaded: isLoaded }" class="main-content">
+      <div
+        class="sign-in-container"
+        :class="{ 'fade-in': pageVisible, 'fade-out': !pageVisible }"
+      >
         <h1 id="setup-title">Sign In</h1>
         <p>Sign in using your email or password</p>
-        
+
         <div v-if="error" class="error-message">{{ error }}</div>
-        
+
         <label class="input-label">
           <input
             type="text"
@@ -245,25 +274,29 @@ onMounted(() => {
             @keyup.enter="onSignIn"
           />
         </label>
-        
-        <BlueGrayButton 
-          id="sign-in-button" 
+
+        <BlueGrayButton
+          id="sign-in-button"
           @click="onSignIn"
           :disabled="loading"
         >
-          {{ loading ? 'Signing In...' : 'Sign In' }}
+          {{ loading ? "Signing In..." : "Sign In" }}
         </BlueGrayButton>
-        
+
         <div class="or">
           <div class="line"></div>
           <p>Or</p>
           <div class="line"></div>
         </div>
-        
+
         <!-- Add placeholder for Google button -->
         <div class="google-button-container">
           <div class="google-button-placeholder" v-if="!googleLoaded"></div>
-          <div id="googleSignInDiv" ref="googleSignInBtn" :class="{ 'visible': googleLoaded }"></div>
+          <div
+            id="googleSignInDiv"
+            ref="googleSignInBtn"
+            :class="{ visible: googleLoaded }"
+          ></div>
         </div>
       </div>
     </main>
@@ -452,7 +485,7 @@ nav {
 
 .sign-in-input:focus {
   outline: none;
-  border-color: #4F46E5;
+  border-color: #4f46e5;
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
 }
 
@@ -465,7 +498,6 @@ nav {
   border-radius: 5px;
   z-index: -1;
 }
-
 
 @media (max-width: 768px) {
   .sign-in-container {
@@ -490,7 +522,7 @@ nav {
 }
 
 .nav-link::after {
-  content: '';
+  content: "";
   position: absolute;
   width: 100%;
   height: 1px;
@@ -569,8 +601,14 @@ nav {
 }
 
 @keyframes pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 0.8; }
-  100% { opacity: 0.6; }
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0.6;
+  }
 }
 </style>

@@ -17,14 +17,17 @@ const props = defineProps({
   }
 });
 
+const isParticlesLoaded = ref(false);
+
 onMounted(async () => {
   if (props.styleType === 'particles') {
     await initParticles();
+    isParticlesLoaded.value = true;
   }
 });
 
 onBeforeUnmount(async () => {
-  if (props.styleType === 'particles') {
+  if (props.styleType === 'particles' && isParticlesLoaded.value) {
     try {
       const container = tsParticles.domItem(0);
       if (container) {
@@ -96,12 +99,28 @@ const initParticles = async () => {
 
 <template>
   <div class="background-wrapper">
-    <div v-if="styleType === 'particles'" id="particles-background"></div>
+    <div v-if="props.styleType === 'particles'" id="particles-background" class="particles-container"></div>
     <slot></slot>
   </div>
 </template>
 
 <style scoped>
+.background-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+}
+
+.particles-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
 /* 1. Gradient with Light Abstract Waves */
 .gradient-waves {
   background: linear-gradient(135deg, #f5f7ff 0%, #e4ecff 100%);
@@ -137,16 +156,14 @@ const initParticles = async () => {
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 5; /* Lower z-index to ensure visibility but behind content */
+  z-index: 1;
 }
 
 .background-wrapper {
-  position: fixed;
-  top: 0;
-  left: 0;
+  position: relative;
+  min-height: 100vh;
   width: 100%;
-  height: 100%;
-  z-index: 1;
+  z-index: 5;
 }
 
 /* 4. Blur App Background */
