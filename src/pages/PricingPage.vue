@@ -2,24 +2,98 @@
 import Navbar from '@/comps/Navbar/Navbar.vue';
 import PricingBackground from '@/comps/PricingBackground.vue';
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import api from '@/api';
 
+const router = useRouter();
 let theme = ref('light');
 const isLoaded = ref(false);
+const currentPlan = ref('free');
 
 function toggleTheme(newTheme) {
   theme.value = newTheme;
 }
 
-onMounted(() => {
-  // Small delay to ensure smooth animation
+async function checkCurrentPlan() {
+  const token = localStorage.getItem('token');
+  try {
+    const response = await api.get('/api/subscription', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    currentPlan.value = response.data.currentPlan.name;
+  } catch (error) {
+    console.error('Failed to fetch subscription status:', error);
+    currentPlan.value = 'free';
+  }
+}
+
+async function handleUpgradeClick(planName) {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    router.push('/sign-in');
+    return;
+  }
+
+  if (planName.toLowerCase() === 'enterprise') {
+    window.location.href = 'mailto:sales@yourcompany.com';
+    return;
+  }
+
+  try {
+    // Navigate to payment page with selected plan
+    await router.push({
+      name: 'PaymentPage',
+      query: { 
+        plan: planName.toLowerCase(),
+        return_url: '/dashboard'
+      }
+    });
+  } catch (error) {
+    console.error('Navigation error:', error);
+    // Direct navigation as fallback
+    window.location.href = `/payment-page?plan=${planName.toLowerCase()}`;
+  }
+}
+
+function getButtonConfig(planName) {
+  const planRank = { 'free': 0, 'premium': 1, 'enterprise': 2 };
+  const currentRank = planRank[currentPlan.value];
+  const targetRank = planRank[planName.toLowerCase()];
+
+  if (targetRank <= currentRank) {
+    return {
+      text: 'Current Plan',
+      class: '',
+      disabled: true,
+      action: null
+    };
+  }
+
+  if (planName.toLowerCase() === 'enterprise') {
+    return {
+      text: 'Contact Sales',
+      class: '',
+      disabled: false,
+      action: () => handleUpgradeClick('enterprise')
+    };
+  }
+
+  return {
+    text: 'Upgrade Now',
+    class: 'premium',
+    disabled: false,
+    action: () => handleUpgradeClick(planName)
+  };
+}
+
+onMounted(async () => {
+  await checkCurrentPlan();
   setTimeout(() => {
     isLoaded.value = true;
   }, 100);
 });
-
-// For development
-const isDev = import.meta.env.MODE === 'development';
-console.log('PricingPage mounted, dev mode:', isDev);
 </script>
 
 <template>
@@ -32,7 +106,9 @@ console.log('PricingPage mounted, dev mode:', isDev);
       <div class="pricing-cards">
         <!-- Free Plan -->
         <div class="card">
-          <div class="plan-header current-plan">Current Plan</div>
+          <div class="plan-header" :class="{ 'current-plan': currentPlan === 'free' }">
+            {{ currentPlan === 'free' ? 'Current Plan' : 'Basic' }}
+          </div>
           <h2 class="plan-title">Free</h2>
           <p class="plan-price">$0.00 /month</p>
           <ul class="plan-features">
@@ -43,12 +119,21 @@ console.log('PricingPage mounted, dev mode:', isDev);
             <li><img src="../assets/CheckMark.png" class="checkmark" /> Email notifications</li>
             <li><img src="../assets/CheckMark.png" class="checkmark" /> Community support</li>
           </ul>
-          <button class="cta-button">Get Started</button>
+          <button 
+            class="cta-button"
+            :class="getButtonConfig('free').class"
+            :disabled="getButtonConfig('free').disabled"
+            @click="getButtonConfig('free').action"
+          >
+            {{ getButtonConfig('free').text }}
+          </button>
         </div>
 
         <!-- Premium Plan -->
         <div class="card best-value">
-          <div class="plan-header">Most Popular</div>
+          <div class="plan-header" :class="{ 'current-plan': currentPlan === 'premium' }">
+            {{ currentPlan === 'premium' ? 'Current Plan' : 'Most Popular' }}
+          </div>
           <h2 class="plan-title">Premium</h2>
           <p class="plan-price">$10.00 /month</p>
           <ul class="plan-features">
@@ -61,12 +146,21 @@ console.log('PricingPage mounted, dev mode:', isDev);
             <li><img src="../assets/CheckMark.png" class="checkmark" /> Custom update schedules</li>
             <li><img src="../assets/CheckMark.png" class="checkmark" /> API access</li>
           </ul>
-          <button class="cta-button premium">Upgrade Now</button>
+          <button 
+            class="cta-button"
+            :class="getButtonConfig('premium').class"
+            :disabled="getButtonConfig('premium').disabled"
+            @click="getButtonConfig('premium').action"
+          >
+            {{ getButtonConfig('premium').text }}
+          </button>
         </div>
 
-        <!-- Business Plan -->
+        <!-- Enterprise Plan -->
         <div class="card">
-          <div class="plan-header">Business</div>
+          <div class="plan-header" :class="{ 'current-plan': currentPlan === 'enterprise' }">
+            {{ currentPlan === 'enterprise' ? 'Current Plan' : 'Business' }}
+          </div>
           <h2 class="plan-title">Enterprise</h2>
           <p class="plan-price">$100.00 /month</p>
           <ul class="plan-features">
@@ -79,7 +173,14 @@ console.log('PricingPage mounted, dev mode:', isDev);
             <li><img src="../assets/CheckMark.png" class="checkmark" /> SLA guarantees</li>
             <li><img src="../assets/CheckMark.png" class="checkmark" /> Custom features</li>
           </ul>
-          <button class="cta-button">Contact Sales</button>
+          <button 
+            class="cta-button"
+            :class="getButtonConfig('enterprise').class"
+            :disabled="getButtonConfig('enterprise').disabled"
+            @click="getButtonConfig('enterprise').action"
+          >
+            {{ getButtonConfig('enterprise').text }}
+          </button>
         </div>
       </div>
     </div>
@@ -259,6 +360,18 @@ export default {
 
 .cta-button.premium:hover {
   background-color: var(--blue-gray);
+}
+
+.cta-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background-color: var(--medium-gray);
+  transform: none !important;
+}
+
+.cta-button:disabled:hover {
+  background-color: var(--medium-gray);
+  transform: none !important;
 }
 
 @media (max-width: 1024px) {

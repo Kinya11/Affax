@@ -15,7 +15,7 @@
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.0",
     "geoip-lite": "^1.4.10",
-    "stripe": "^18.0.0",
-    "vue-toastification": "^1.7.14"
+    "stripe": "^18.0.0"
+    // Remove vue-toastification as it's a frontend dependency
   }
 }

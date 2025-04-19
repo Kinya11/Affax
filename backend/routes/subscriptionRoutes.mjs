@@ -8,19 +8,20 @@ const router = express.Router();
 // Get subscription status
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const [subscription] = await pool.query(
+    const [result] = await pool.query(
       `SELECT 
-        us.plan_type,
-        us.seats_limit,
+        u.user_id,
+        u.plan_type,
         COUNT(d.id) as used_seats
-       FROM user_subscriptions us
-       LEFT JOIN devices d ON d.user_id = us.user_id AND d.is_active = TRUE
-       WHERE us.user_id = ? AND us.status = 'active'
-       GROUP BY us.id`,
+       FROM users u
+       LEFT JOIN devices d ON d.user_id = u.user_id AND d.is_active = TRUE
+       WHERE u.user_id = ?
+       GROUP BY u.user_id`,
       [req.user.userId]
     );
 
-    const planType = subscription?.[0]?.plan_type || 'free';
+    // Use the plan_type directly since it's already in the correct format
+    const planType = !result?.length ? 'free' : result[0].plan_type;
     const tierConfig = subscriptionTiers[planType];
 
     res.json({
@@ -28,8 +29,8 @@ router.get('/', authenticateToken, async (req, res) => {
         name: planType,
         limits: tierConfig.limits,
         seats: {
-          limit: subscription?.[0]?.seats_limit || tierConfig.limits.devices,
-          used: subscription?.[0]?.used_seats || 0
+          limit: tierConfig.limits.devices,
+          used: result?.[0]?.used_seats || 0
         }
       },
       features: tierConfig.limits.features

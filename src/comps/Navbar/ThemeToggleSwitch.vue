@@ -1,36 +1,27 @@
 <script setup>
 import { ref, watch, onMounted } from "vue";
 
-const emit = defineEmits();
+const emit = defineEmits(['toggled']);
 const root = document.documentElement;
 
-// Theme Scripts
-let theme = ref('light');
-let isChecked = ref(false);
+// Theme Scripts - set based on mode
+let theme = ref(import.meta.env.MODE === 'development' ? 'dark' : 'light');
+let isChecked = ref(import.meta.env.MODE === 'development');
 
-// Function to set a cookie
 function setCookie(name, value, days) {
   const expires = new Date();
-  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000); // Cookie expiration time
+  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
   document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
 }
 
-// Function to get a cookie by name
 function getCookie(name) {
-  const nameEQ = `${name}=`;
-  const ca = document.cookie.split(";");
-
-  for (let i = 0; i < ca.length; i++) {
-    let c = ca[i];
-    while (c.charAt(0) === " ") c = c.substring(1, c.length); // trim leading spaces
-    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
-  }
-  return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
 }
 
 function updateCSSVariables() {
-    // Update CSS variables dynamically based on theme
-    if (theme.value === "dark") {
+  if (theme.value === "dark") {
     root.style.setProperty("--inverted-button-background", "#0000");
     root.style.setProperty("--inverted-button-border", "var(--third-layer-dark)");
     root.style.setProperty("--inverted-button-text", "var(--text-color-dark)");
@@ -43,19 +34,24 @@ function updateCSSVariables() {
   }
 }
 
-// Check if a theme is already set in the cookies on mount
 onMounted(() => {
   const savedTheme = getCookie("theme");
   if (savedTheme) {
     theme.value = savedTheme;
-    isChecked.value = savedTheme === "dark"; // Set checkbox based on theme
+    isChecked.value = savedTheme === "dark";
+  } else {
+    // If no saved theme, set based on mode
+    const initialTheme = import.meta.env.MODE === 'development' ? 'dark' : 'light';
+    theme.value = initialTheme;
+    isChecked.value = initialTheme === 'dark';
+    setCookie("theme", initialTheme, 365);
   }
   updateCSSVariables();
 });
 
 watch(isChecked, (newValue) => {
   theme.value = newValue ? "dark" : "light";
-  setCookie("theme", theme.value, 365); // Save theme in cookie for 365 days
+  setCookie("theme", theme.value, 365);
   emit("toggled", theme.value);
   updateCSSVariables();
 });

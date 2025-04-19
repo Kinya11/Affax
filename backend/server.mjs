@@ -1,6 +1,6 @@
 // server.mjs
 import { config } from "dotenv";
-config({ path: "server_info.env" });
+config({ path: ".env.development" });
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -21,203 +21,51 @@ import { promisify } from 'util';
 import rateLimit from 'express-rate-limit';
 import geoip from 'geoip-lite';
 import https from 'https';
-import subscriptionRoutes from './routes/subscriptionRoutes.mjs';  // Note the .mjs extension
-import pool from './db.mjs';  // Import the shared pool
+import subscriptionRoutes from './routes/subscriptionRoutes.mjs';
+import pool from './db.mjs';
+import { initializeStripe } from './config/stripe.js';
+
 const { lookup } = geoip;
-
 const execAsync = promisify(exec);
-
 const DEBUG = process.env.NODE_ENV === 'development';
+
+// Initialize Stripe early
+try {
+  const stripe = initializeStripe();
+  console.log('✓ Stripe initialized successfully');
+} catch (error) {
+  console.error('× Stripe initialization error:', error);
+  process.exit(1);
+}
 
 // Initialize Express app
 const app = express();
 app.use(cookieParser());
 const PORT = process.env.PORT || 5001;
 
-// Configuration
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error("FATAL: JWT_SECRET is not defined");
-  process.exit(1);
-}
-
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Make pool available to routes
-app.locals.pool = pool;
-
-const requiredEnvVars = [
-  "JWT_SECRET",
-  "GOOGLE_CLIENT_ID",
-  "DB_HOST",
-  "DB_NAME",
-];
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`FATAL: Missing required environment variable ${envVar}`);
-    process.exit(1);
-  }
-}
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something broke!' });
-});
-
-const checkDeviceOrAdmin = async (req, res, next) => {
-  try {
-    const deviceId = req.headers['x-device-id']
-    
-    if (!deviceId && !req.user?.isAdmin) {
-      return res.status(403).json({
-        error: 'Device registration required',
-        errorCode: 'DEVICE_NOT_REGISTERED'
-      })
-    }
-
-    if (req.user?.isAdmin) {
-      return next()
-    }
-
-    const [device] = await pool.query(
-      'SELECT * FROM devices WHERE device_id = ? AND user_id = ?',
-      [deviceId, req.user.userId]
-    )
-
-    if (!device.length) {
-      return res.status(403).json({
-        error: 'Device not registered or unauthorized',
-        errorCode: 'DEVICE_NOT_AUTHORIZED'
-      })
-    }
-
-    next()
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error' })
-  }
-}
-
-// Create devices table if it doesn't exist
-async function initializeDatabase() {
-  try {
-    // First create the users table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        user_id INT AUTO_INCREMENT PRIMARY KEY,
-        first_name VARCHAR(255),
-        last_name VARCHAR(255),
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255),
-        date_of_birth DATE,
-        career_field VARCHAR(255),
-        receive_emails BOOLEAN DEFAULT FALSE,
-        auth_provider VARCHAR(50),
-        google_id VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Check if plan_type column exists
-    const [columns] = await pool.query(`
-      SHOW COLUMNS FROM users WHERE Field = 'plan_type'
-    `);
-
-    // Add plan_type column if it doesn't exist
-    if (columns.length === 0) {
-      await pool.query(`
-        ALTER TABLE users
-        ADD COLUMN plan_type ENUM('free', 'basic', 'pro', 'enterprise') 
-        DEFAULT 'free' NOT NULL
-      `);
-    }
-
-    // Create user_activity_log table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_activity_log (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        activity_type ENUM('registration', 'login', 'failed_login') NOT NULL,
-        ip_address VARCHAR(45) NOT NULL,
-        user_agent TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
-      )
-    `);
-
-    console.log("Database tables verified/created");
-  } catch (error) {
-    console.error("Database initialization failed:", error);
-    process.exit(1);
-  }
-}
-
-// Call this before starting the server
-initializeDatabase();
-
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
-});
-
-process.on("uncaughtException", (error) => {
-  console.error("Uncaught Exception:", error);
-  // Don't exit in development to allow for debugging
-  if (process.env.NODE_ENV === "production") {
-    process.exit(1);
-  }
-});
-
-function getPlatform() {
-  switch (process.platform) {
-    case "win32":
-      return "windows";
-    case "darwin":
-      return "macos";
-    default:
-      return "linux";
-  }
-}
-
-// Middleware configuration
+// Single CORS configuration
 const corsOptions = {
-  origin: process.env.NODE_ENV === "production"
-    ? ["https://affax.app", "https://www.affax.app"]
-    : ["http://localhost:5173", "http://127.0.0.1:5173"],
+  origin: process.env.NODE_ENV === 'development'
+    ? ['http://localhost:5173', 'http://127.0.0.1:5173']
+    : ['https://affax.app', 'https://www.affax.app'],
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "X-Device-ID",
-    "X-Device-Fingerprint",
-    "X-Requested-With",
-    "Accept",
-    "X-Client-Version",
-    "X-Device-Platform",
-    "Origin"
+    'Content-Type',
+    'Authorization',
+    'X-Device-ID',
+    'X-Device-Fingerprint',
+    'X-Requested-With',
+    'Accept',
+    'X-Client-Version',
+    'X-Device-Platform',
+    'Origin'
   ],
-  exposedHeaders: ["Authorization", "X-Device-Registration", "X-New-Token"],
+  exposedHeaders: ['Authorization', 'X-Device-Registration', 'X-New-Token'],
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
-
-// Add debug logging for CORS
-app.use((req, res, next) => {
-  console.log('Incoming request:', {
-    method: req.method,
-    path: req.path,
-    origin: req.headers.origin,
-    'content-type': req.headers['content-type']
-  });
-  next();
-});
 
 app.use(cors(corsOptions));
 
@@ -247,16 +95,22 @@ app.use(
           "'self'",
           "'unsafe-inline'",
           "https://accounts.google.com",
-          "https://apis.google.com"
+          "https://apis.google.com",
+          "https://js.stripe.com" // Add Stripe's domain
         ],
-        "frame-src": ["'self'", "https://accounts.google.com"],
+        "frame-src": [
+          "'self'", 
+          "https://accounts.google.com",
+          "https://js.stripe.com" // Add Stripe's domain
+        ],
         "img-src": ["'self'", "data:", "https://lh3.googleusercontent.com"],
         "connect-src": [
           "'self'",
           "http://localhost:5001",
           "http://localhost:5173",
           "https://api.affax.app",
-          "https://affax.app"
+          "https://affax.app",
+          "https://api.stripe.com" // Add Stripe's API domain
         ]
       }
     }
@@ -1586,6 +1440,45 @@ app.post('/api/make-admin/:email', async (req, res) => {
 });
 
 // Installation Routes
+const checkDeviceOrAdmin = async (req, res, next) => {
+  try {
+    // Skip check for admin users
+    if (req.user?.isAdmin) {
+      return next();
+    }
+
+    const deviceId = req.headers['x-device-id'];
+    
+    if (!deviceId) {
+      return res.status(403).json({
+        error: 'Device ID required',
+        code: 'DEVICE_REQUIRED'
+      });
+    }
+
+    const [device] = await pool.query(
+      `SELECT id FROM devices 
+       WHERE user_id = ? AND device_id = ? AND is_active = TRUE`,
+      [req.user.userId, deviceId]
+    );
+
+    if (!device.length) {
+      return res.status(403).json({
+        error: 'Device not registered or inactive',
+        code: 'DEVICE_NOT_REGISTERED'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Device check error:', error);
+    res.status(500).json({ 
+      error: 'Failed to verify device',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 app.post("/api/lists/:listId/install", 
   authenticateToken, 
   checkDeviceOrAdmin, 
@@ -1845,24 +1738,8 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
-// Create HTTP server
-const httpServer = app.listen(PORT, () => {
-  console.log(`HTTP Server running on http://localhost:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
 
-// Only create HTTPS server if SSL files exist
-if (process.env.NODE_ENV === 'production' || process.env.SSL_ENABLED === 'true') {
-  try {
-    const sslOptions = {
-      key: fs.readFileSync(path.join(__dirname, '../ssl/private.key')),
-      cert: fs.readFileSync(path.join(__dirname, '../ssl/certificate.crt')),
-      ca: fs.readFileSync(path.join(__dirname, '../ssl/ca_bundle.crt'))
-    };
-
-    const httpsServer = https.createServer(sslOptions, app).listen(PORT + 1, () => {
-      console.log(`HTTPS Server running on https://localhost:${PORT + 1}`);
-    });
-  } catch (error) {
-    console.warn('SSL files not found, HTTPS server not started');
-  }
-}
+export default app;

@@ -1,7 +1,9 @@
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, watch, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { useListStore } from '@/stores/listStore';
+import { storeToRefs } from 'pinia';
 import NavbarElement from "./NavbarElement.vue";
 import ThemeToggleSwitch from "./ThemeToggleSwitch.vue";
 import auth from '@/api/auth';
@@ -10,157 +12,26 @@ import { useToast } from 'vue-toastification';
 
 const router = useRouter();
 const userStore = useUserStore();
-const lists = ref([]);
+const listStore = useListStore();
+const { lists } = storeToRefs(listStore);
 const toast = useToast();
 const isUpgradeLoading = ref(false);
 const subscriptionStatus = ref(null);
 const route = useRoute();
 
-// Add this function to fetch lists
-async function fetchLists() {
-  try {
-    const response = await api.get("/api/lists");
-    lists.value = response.data;
-  } catch (error) {
-    console.error('Failed to fetch lists:', error);
-  }
-}
-
-// Set up polling for list updates
-const startListPolling = () => {
-  // Initial fetch
-  fetchLists();
-  
-  // Poll every 5 seconds instead of 2
-  const interval = setInterval(fetchLists, 5000);
-  
-  // Clean up on component unmount
-  onBeforeUnmount(() => {
-    clearInterval(interval);
-  });
-};
-
-// Listen for custom events that should trigger list refresh
-const setupListUpdateListeners = () => {
-  window.addEventListener('list-updated', fetchLists);
-  window.addEventListener('list-created', fetchLists);
-  window.addEventListener('list-deleted', fetchLists);
-  
-  // Clean up listeners on unmount
-  onBeforeUnmount(() => {
-    window.removeEventListener('list-updated', fetchLists);
-    window.removeEventListener('list-created', fetchLists);
-    window.removeEventListener('list-deleted', fetchLists);
-  });
-};
-
-// Add this function to handle subscription checks
-async function checkSubscription() {
-  try {
-    const token = localStorage.getItem('token');
-    if (!token) return null;
-
-    const response = await api.get('/api/subscription');
-    return response.data;
-  } catch (error) {
-    console.error('Failed to check subscription:', error);
-    // Return default free plan for development
-    if (import.meta.env.MODE === 'development') {
-      return {
-        currentPlan: {
-          name: 'free',
-          limits: {
-            maxLists: 3,
-            maxAppsPerList: 5
-          }
-        },
-        availableSeats: 1,
-        usedSeats: 1
-      };
-    }
-    return null;
-  }
-}
-
-onMounted(async () => {
-  startListPolling();
-  setupListUpdateListeners();
-  
-  // Preload subscription status
-  subscriptionStatus.value = await checkSubscription();
-});
-
-// Add this function to handle list click
-const handleListClick = (listId) => {
-  // Navigate to app-list and trigger list expansion
-  router.push({
-    path: '/app-list',
-    query: { expandList: listId }
-  });
-  
-  // Dispatch custom event to expand the list
-  window.dispatchEvent(new CustomEvent('expand-list', {
-    detail: { listId, shouldScroll: true }
-  }));
-};
-
-// Add function to handle logo click
-const handleLogoClick = () => {
-  // Only navigate if user is logged in
-  const token = localStorage.getItem('token');
-  if (token) {
-    router.push('/app-list');
-  }
-};
+const emit = defineEmits(['toggled']);
 
 // Track dropdown states
 const isOrgDropdownOpen = ref(false);
 const isListsDropdownOpen = ref(false);
 const isAccountDropdownOpen = ref(false);
-const emit = defineEmits(['toggled']);
 
+// Theme management - set based on mode
+const theme = ref(import.meta.env.MODE === 'development' ? 'dark' : 'light');
+const arrowSrc = ref(theme.value === 'dark' ? "/src/assets/Arrow_White.svg" : "/src/assets/Arrow_Black.svg");
+const logoSrc = ref(theme.value === 'dark' ? "/src/assets/LogoLight.svg" : "/src/assets/LogoDark.svg");
 
-// Handle hover effect for dropdowns
-function onHover(id) {
-  const arrow = document.getElementById(`${id}-arrow`);
-  if (arrow) {
-    arrow.classList.add("rotated");
-  }
-
-  if (id === "orgs") isOrgDropdownOpen.value = true;
-  if (id === "lists") isListsDropdownOpen.value = true;
-  if (id === "account") isAccountDropdownOpen.value = true;
-}
-
-const logout = async () => {
-  try {
-    await auth.logout();
-    userStore.clearUser(); // Clear Pinia store
-    await router.push('/sign-in');
-  } catch (error) {
-    console.error('Logout failed:', error);
-    // Even if logout fails, ensure user is redirected to sign-in
-    userStore.clearUser();
-    await router.push('/sign-in');
-  }
-};
-
-function onLeave(id) {
-  const arrow = document.getElementById(`${id}-arrow`);
-  if (arrow) {
-    arrow.classList.remove("rotated");
-  }
-
-  if (id === "orgs") isOrgDropdownOpen.value = false;
-  if (id === "lists") isListsDropdownOpen.value = false;
-  if (id === "account") isAccountDropdownOpen.value = false;
-}
-
-// Theme management
-let theme = ref(route.path === "/pricing-page" ? "light" : "dark");
-let arrowSrc = ref("/src/assets/Arrow_Black.svg");
-let logoSrc = ref("/src/assets/LogoDark.svg");
-
+// Force light theme on pricing page
 watch(
   () => route.path,
   (newPath) => {
@@ -177,7 +48,6 @@ watch(theme, (newTheme) => {
     document.body.classList.remove("light");
     arrowSrc.value = "/src/assets/Arrow_White.svg";
     logoSrc.value = "/src/assets/LogoLight.svg";
-
   } else {
     document.body.classList.add("light");
     document.body.classList.remove("dark");
@@ -186,45 +56,139 @@ watch(theme, (newTheme) => {
   }
 });
 
+// Add this function to fetch lists
+const fetchLists = async () => {
+  try {
+    await listStore.fetchLists();
+  } catch (error) {
+    console.error('Failed to fetch lists:', error);
+  }
+};
+
+onMounted(async () => {
+  // Existing theme initialization
+  const initialTheme = import.meta.env.MODE === 'development' ? 'dark' : 'light';
+  theme.value = initialTheme;
+  emit("toggled", initialTheme);
+  
+  // Fetch lists
+  await fetchLists();
+  
+  // Add event listeners for list updates
+  window.addEventListener('list-created', fetchLists);
+  window.addEventListener('list-updated', fetchLists);
+  window.addEventListener('list-deleted', fetchLists);
+});
+
+// Clean up event listeners
+onUnmounted(() => {
+  window.removeEventListener('list-created', fetchLists);
+  window.removeEventListener('list-updated', fetchLists);
+  window.removeEventListener('list-deleted', fetchLists);
+});
+
+function onHover(id) {
+  const arrow = document.getElementById(`${id}-arrow`);
+  if (arrow) {
+    arrow.classList.add("rotated");
+  }
+
+  if (id === "orgs") isOrgDropdownOpen.value = true;
+  if (id === "lists") isListsDropdownOpen.value = true;
+  if (id === "account") isAccountDropdownOpen.value = true;
+}
+
+function onLeave(id) {
+  const arrow = document.getElementById(`${id}-arrow`);
+  if (arrow) {
+    arrow.classList.remove("rotated");
+  }
+
+  if (id === "orgs") isOrgDropdownOpen.value = false;
+  if (id === "lists") isListsDropdownOpen.value = false;
+  if (id === "account") isAccountDropdownOpen.value = false;
+}
+
 // Method to update the theme
 function toggleTheme(newTheme) {
   theme.value = newTheme;
   emit('toggled', newTheme);
 }
 
-// Add function to handle upgrade click
+const navigateToList = (listId) => {
+  // Close the dropdown
+  isListsDropdownOpen.value = false;
+
+  // If we're already on the app-list page, just dispatch the expand event
+  if (route.path === '/app-list') {
+    window.dispatchEvent(new CustomEvent('expand-list', {
+      detail: {
+        listId,
+        shouldScroll: true
+      }
+    }));
+    return;
+  }
+
+  // Otherwise, navigate to app-list with the expand parameter
+  router.push({
+    path: '/app-list',
+    query: { expandList: listId }
+  });
+};
+
 const handleUpgradeClick = async () => {
-  if (isUpgradeLoading.value) return;
-  
   try {
     isUpgradeLoading.value = true;
     
-    // For development, allow direct navigation
-    if (import.meta.env.MODE === 'development') {
-      router.push('/pricing-page');
-      return;
-    }
-
+    // Check if user is logged in
     const token = localStorage.getItem('token');
     if (!token) {
       router.push('/sign-in');
       return;
     }
 
-    // Check subscription status
-    const status = await checkSubscription();
-    if (status?.currentPlan?.name !== 'free') {
-      toast.info('You are already on a paid plan!');
-      return;
-    }
-
+    // Close the dropdown
+    isAccountDropdownOpen.value = false;
+    
+    // Navigate to pricing page
     router.push('/pricing-page');
   } catch (error) {
-    console.error('Failed to check subscription:', error);
-    // Always allow navigation to pricing page
-    router.push('/pricing-page');
+    console.error('Error handling upgrade click:', error);
+    toast.error('Failed to process upgrade request');
   } finally {
     isUpgradeLoading.value = false;
+  }
+};
+
+const logout = async () => {
+  try {
+    // Get token from storage
+    const token = localStorage.getItem('token');
+    
+    if (token) {
+      // Call backend logout
+      await auth.logout();
+    }
+
+    // Clear client-side storage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    
+    // Clear cookies if any
+    document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    
+    // Close dropdown
+    isAccountDropdownOpen.value = false;
+    
+    // Redirect to login
+    router.push('/sign-in');
+    
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Even if server logout fails, clear client side and redirect
+    localStorage.removeItem('token');
+    router.push('/sign-in');
   }
 };
 </script>
@@ -255,17 +219,18 @@ const handleUpgradeClick = async () => {
           :class="['nav-dropdown', theme, { show: isListsDropdownOpen }]"
           id="lists"
         >
-          <div v-if="lists.length === 0" :class="['router-link', theme]">
+          <div v-if="!lists.length" :class="['router-link', theme]">
             <NavbarElement :theme="theme" :arrowSrc="arrowSrc">
               No lists
             </NavbarElement>
           </div>
           <div
             v-else
-            v-for="list in lists" 
+            v-for="list in lists"
             :key="list.id"
             :class="['router-link', theme]"
-            @click="handleListClick(list.id)"
+            @click="navigateToList(list.id)"
+            style="cursor: pointer;"
           >
             <NavbarElement :theme="theme" :arrowSrc="arrowSrc">
               {{ list.name }}
@@ -327,11 +292,11 @@ const handleUpgradeClick = async () => {
             </div>
           </NavbarElement>
         </div>
-        <router-link to="/sign-in">
-          <NavbarElement @click="logout" id="logoutbutton" :theme="theme" :arrowSrc="arrowSrc">
+        <div @click="logout">
+          <NavbarElement :theme="theme" :arrowSrc="arrowSrc">
             Log out
           </NavbarElement>
-        </router-link>
+        </div>
       </div>
     </span>
     <!-- Removing the standalone Devices link that was here -->
@@ -545,12 +510,18 @@ header {
   border: 2px solid transparent;
   border-top-color: currentColor;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
   to {
     transform: rotate(360deg);
   }
+}
+
+.router-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
 }
 </style>

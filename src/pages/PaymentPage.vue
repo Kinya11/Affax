@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { loadStripe } from '@stripe/stripe-js';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import Navbar from "@/comps/Navbar/Navbar.vue";
 import PricingBackground from '@/comps/PricingBackground.vue';
 import BlueGrayButton from "@/comps/BlueGrayButton.vue";
@@ -9,6 +9,7 @@ import { useToast } from 'vue-toastification';
 import api from '@/api';
 
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 const stripe = ref(null);
 const card = ref(null);
@@ -16,37 +17,43 @@ const loading = ref(false);
 const selectedMethod = ref('card');
 const selectedPlan = ref('premium');
 const isLoaded = ref(false);
+const theme = ref('light');
+const selectedBackground = ref('diagonal-lines');
+
+// Add theme toggle function
+const toggleTheme = (newTheme) => {
+  theme.value = newTheme;
+};
 
 onMounted(async () => {
   try {
+    // Get the plan from the URL query parameters
+    if (route.query.plan) {
+      selectedPlan.value = route.query.plan;
+    }
+
+    // Check if Stripe key is available
+    const stripeKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
+    if (!stripeKey) {
+      throw new Error('Stripe public key is not configured');
+    }
+
     // Initialize Stripe
-    stripe.value = await loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
+    stripe.value = await loadStripe(stripeKey);
+    if (!stripe.value) {
+      throw new Error('Failed to initialize Stripe');
+    }
     
-    // Create card elements
+    // Mount the card element
     const elements = stripe.value.elements();
-    card.value = elements.create('card', {
-      style: {
-        base: {
-          fontSize: '16px',
-          color: '#424770',
-          '::placeholder': {
-            color: '#aab7c4',
-          },
-        },
-        invalid: {
-          color: '#9e2146',
-        },
-      },
-    });
-    
-    // Mount card element
+    card.value = elements.create('card');
     card.value.mount('#card-element');
-    
-    // Handle real-time validation errors
-    card.value.addEventListener('change', function(event) {
+
+    // Handle card element errors
+    card.value.on('change', ({error}) => {
       const displayError = document.getElementById('card-errors');
-      if (event.error) {
-        displayError.textContent = event.error.message;
+      if (error) {
+        displayError.textContent = error.message;
       } else {
         displayError.textContent = '';
       }
@@ -56,7 +63,9 @@ onMounted(async () => {
       isLoaded.value = true;
     }, 100);
   } catch (error) {
-    console.error('Failed to initialize payment page:', error);
+    console.error('Payment page initialization error:', error);
+    toast.error('Failed to initialize payment system');
+    router.push('/pricing');
   }
 });
 
@@ -69,13 +78,15 @@ const handlePayment = async () => {
   loading.value = true;
   
   try {
-    // Create payment intent
-    const { data: { clientSecret } } = await api.post('/api/payment/create-payment-intent', {
+    const response = await api.post('/api/payment/create-payment-intent', {
       plan: selectedPlan.value
     });
 
-    // Confirm payment
-    const result = await stripe.value.confirmCardPayment(clientSecret, {
+    if (!response.data.clientSecret) {
+      throw new Error('No client secret received');
+    }
+
+    const result = await stripe.value.confirmCardPayment(response.data.clientSecret, {
       payment_method: {
         card: card.value,
       }
@@ -85,11 +96,11 @@ const handlePayment = async () => {
       throw new Error(result.error.message);
     }
 
-    // Payment successful
     toast.success('Payment successful!');
-    router.push('/dashboard'); // or wherever you want to redirect after success
+    router.push('/dashboard');
   } catch (error) {
-    toast.error(error.message || 'Payment failed. Please try again.');
+    console.error('Payment error:', error);
+    toast.error(error.response?.data?.error || error.message || 'Payment failed. Please try again.');
   } finally {
     loading.value = false;
   }
@@ -101,11 +112,16 @@ const setPaymentMethod = (method) => {
 </script>
 
 <template>
-  <div :class="{ 'loaded': isLoaded }" class="payment-page">
-    <PricingBackground style-type="gradient-texture">
-      <Navbar class="nav-glass" />
-      <div class="payment-container">
+  <div class="payment-page-wrapper">
+    <PricingBackground :styleType="selectedBackground" />
+    
+    <!-- Replace custom nav with Navbar component -->
+    <Navbar @toggle="toggleTheme" />
+
+    <main :class="{ 'loaded': isLoaded }" class="main-content">
+      <div class="payment-container" :class="{ 'fade-in': true }">
         <h1 class="page-title">Payment Information</h1>
+        <p class="subtitle">Complete your subscription to get started</p>
 
         <div class="payment-methods">
           <BlueGrayButton 
@@ -132,8 +148,8 @@ const setPaymentMethod = (method) => {
           <!-- Plan Summary -->
           <div class="summary">
             <h2>Plan Summary</h2>
-            <p>Selected Plan: <strong>{{ selectedPlan }}</strong></p>
-            <p>Total: <strong>$10.00 / month</strong></p>
+            <p>Selected Plan: <strong>{{ selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1) }}</strong></p>
+            <p>Total: <strong>${{ selectedPlan === 'premium' ? '10.00' : '100.00' }} / month</strong></p>
           </div>
 
           <!-- Actions -->
@@ -155,55 +171,96 @@ const setPaymentMethod = (method) => {
           </div>
         </form>
       </div>
-    </PricingBackground>
+    </main>
   </div>
 </template>
 
 <style scoped>
-.payment-page {
+.payment-page-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+:deep(#particles-background) {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+}
+
+.main-content {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   opacity: 0;
   transform: translateY(20px);
   transition: opacity 0.5s ease, transform 0.5s ease;
+  z-index: 10;
+  padding-top: 60px;
 }
 
-.payment-page.loaded {
+.main-content.loaded {
   opacity: 1;
   transform: translateY(0);
 }
 
-.nav-glass {
-  background-color: rgba(255, 255, 255, 0.5);
-  position: fixed;
-  top: 10px;
-  left: 0.25%;
-  right: 1%;
-  width: 98%;
-  border-radius: 8px;
-  padding: 12px 20px;
-  box-shadow: #0000003b 0px 4px 4px;
-  z-index: 100;
-  backdrop-filter: blur(10px);
-  height: 35px;
-}
-
+/* Modify the payment container to be more transparent */
 .payment-container {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
+  margin-top: 20px;
+  width: 35%;
+  max-width: 500px;
+  background: rgba(255, 255, 255, 0.85); /* Reduced opacity */
+  backdrop-filter: blur(5px); /* Reduced blur */
+  -webkit-backdrop-filter: blur(5px);
   border-radius: 16px;
   padding: 2.5rem;
-  margin: 0 auto;
-  max-width: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   position: relative;
-  z-index: 100;
-  margin-top: calc(35px + 20px + 2rem);
+  z-index: 20;
+  margin-top: -20px;
+}
+
+/* Make the payment form more transparent as well */
+.payment-form {
+  background: rgba(255, 255, 255, 0.3); /* More transparent */
+  padding: 1.5rem;
+  border-radius: 12px;
+}
+
+/* Ensure the card element stands out */
+#card-element {
+  padding: 12px;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  transition: border-color 0.2s ease;
 }
 
 .page-title {
   text-align: center;
-  margin-bottom: 2rem;
-  font-size: 2rem;
-  color: var(--dark-blue);
+  font-size: 24px;
+  margin-bottom: 15px;
+  font-weight: 500;
+  color: #000;
+}
+
+.subtitle {
+  text-align: center;
+  color: #666;
+  margin-bottom: 25px;
+  font-size: 14px;
 }
 
 .payment-methods {
@@ -220,98 +277,92 @@ const setPaymentMethod = (method) => {
 
 .payment-methods :deep(.blue-gray-button.active) {
   background-color: var(--dark-blue);
-}
-
-.payment-methods :deep(.blue-gray-button[disabled]) {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.payment-form {
-  background: rgba(255, 255, 255, 0.4);
-  padding: 2rem;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.form-grid {
-  margin-bottom: 1.5rem;
+  color: white;
 }
 
 #card-element {
-  padding: 1rem;
+  padding: 12px;
   background: white;
+  border: 1px solid rgba(0, 0, 0, 0.368);
   border-radius: 8px;
-  border: 1px solid #ccc;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.2s ease;
 }
 
 #card-element:focus {
-  border-color: var(--dark-blue);
-  box-shadow: 0 0 0 1px var(--dark-blue);
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
 }
 
 #card-errors {
-  color: #dc3545;
-  font-size: 0.9rem;
-  margin-top: 0.5rem;
+  color: red;
+  font-size: 14px;
+  margin-top: 8px;
   min-height: 20px;
 }
 
 .summary {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
   text-align: center;
-  color: var(--dark-blue);
 }
 
 .summary h2 {
-  margin-bottom: 0.5rem;
+  font-size: 18px;
+  margin-bottom: 10px;
 }
 
 .form-actions {
+  margin-top: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  margin-top: 2rem;
+  gap: 10px;
+  align-items: center;
 }
 
 .form-actions :deep(.blue-gray-button) {
-  width: 100%;
-  padding: 0.9rem;
-}
-
-.proceed-btn {
-  background-color: var(--dark-blue);
-  color: white;
-  font-weight: 500;
-}
-
-.proceed-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
+  width: 70%;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 5px;
 }
 
 .cancel-btn {
   background: none;
   border: none;
   color: #666;
-  font-size: 0.95rem;
+  font-size: 14px;
   cursor: pointer;
-  padding: 0.5rem;
+  padding: 8px;
 }
 
 .cancel-btn:hover {
   text-decoration: underline;
 }
 
-/* Ensure no overflow */
-:deep(#app) {
-  overflow: hidden;
+.fade-in {
+  animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity;
 }
 
-body {
-  overflow: hidden;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) translateZ(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .payment-container {
+    width: 90%;
+    padding: 30px;
+  }
+  
+  .form-actions :deep(.blue-gray-button) {
+    width: 100%;
+  }
 }
 </style>
