@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const baseURL = import.meta.env.MODE === 'development' 
-  ? 'https://localhost:5001'  // Changed to https
+  ? 'http://localhost:5001'  // Change to HTTP for development
   : import.meta.env.VITE_API_URL;
 
 console.log('API baseURL:', baseURL);
@@ -12,11 +12,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json'
   },
-  withCredentials: true,
-  // Add this for development
-  httpsAgent: import.meta.env.MODE === 'development' ? { 
-    rejectUnauthorized: false 
-  } : undefined
+  withCredentials: true
 });
 
 api.interceptors.request.use(config => {
@@ -24,19 +20,6 @@ api.interceptors.request.use(config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  
-  const deviceId = localStorage.getItem('deviceId');
-  if (deviceId) {
-    config.headers['X-Device-ID'] = deviceId;
-  }
-  
-  // Log request for debugging
-  console.log('Making API request:', {
-    url: config.url,
-    method: config.method,
-    baseURL: config.baseURL
-  });
-  
   return config;
 });
 

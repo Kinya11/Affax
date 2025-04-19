@@ -43,31 +43,29 @@ const app = express();
 app.use(cookieParser());
 const PORT = process.env.PORT || 5001;
 
-// Single CORS configuration
+// Define CORS options before using them
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'development'
-    ? ['http://localhost:5173', 'http://127.0.0.1:5173']
-    : ['https://affax.app', 'https://www.affax.app'],
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://affax.app', 'https://www.affax.app']  // Production domains
+    : ['http://localhost:5173', 'http://localhost:5174'], // Development domains
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
-    'Content-Type',
-    'Authorization',
+    'Content-Type', 
+    'Authorization', 
     'X-Device-ID',
-    'X-Device-Fingerprint',
-    'X-Requested-With',
-    'Accept',
-    'X-Client-Version',
-    'X-Device-Platform',
-    'Origin'
-  ],
-  exposedHeaders: ['Authorization', 'X-Device-Registration', 'X-New-Token'],
-  maxAge: 86400,
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+    'X-Requested-With'
+  ]
 };
 
+// Add CORS configuration
 app.use(cors(corsOptions));
+
+// Remove duplicate CORS middleware
+// app.use(cors({
+//   origin: ['http://localhost:5173', 'http://localhost:5174'],
+//   credentials: true
+// }));
 
 // Remove or modify the existing COOP and COEP headers for development
 if (process.env.NODE_ENV !== 'production') {
@@ -705,18 +703,27 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    // Add debug logging
+    console.log("Login attempt:", {
+      email,
+      hashedPassword: user.password?.substring(0, 10) + '...',
+      deviceId
+    });
+
     const validPassword = await argon2.verify(user.password, password);
+    
     if (!validPassword) {
+      console.log("Password verification failed for user:", email);
       return res.status(401).json({ error: "Invalid password" });
     }
 
     const token = jwt.sign(
       { 
         userId: user.user_id,
-        isAdmin: user.is_admin // Add admin status from DB
+        isAdmin: user.is_admin
       }, 
       process.env.JWT_SECRET, 
-      { expiresIn: "1h" }
+      { expiresIn: "24h" }
     );
 
     // Check device registration
@@ -728,12 +735,12 @@ app.post("/api/auth/login", async (req, res) => {
 
     res.json({
       token,
-      expires_in: 3600,
+      expires_in: 86400, // 24 hours in seconds
       user: {
         id: user.user_id,
         email: user.email,
         firstName: user.first_name,
-        isAdmin: user.is_admin // Add this
+        isAdmin: user.is_admin
       },
       requiresDeviceRegistration: device.length === 0
     });
@@ -852,37 +859,30 @@ app.post("/api/auth/google-login", async (req, res) => {
   }
 });
 
-app.post("/api/auth/logout", authenticateToken, async (req, res) => {
+app.post("/api/auth/logout", async (req, res) => {
   try {
-    const token =
-      req.headers.authorization?.split(" ")[1] || req.cookies?.token;
+    const token = req.headers.authorization?.split(" ")[1];
     
     if (!token) {
-      return res.status(400).json({ error: "No token provided" });
+      return res.status(200).json({ message: "Logged out successfully" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Decode token to get expiration time
+    const decoded = jwt.decode(token);
+    const expiresAt = new Date(decoded.exp * 1000); // Convert Unix timestamp to MySQL datetime
 
+    // Insert token with expiration time
     await pool.query(
-      "INSERT INTO revoked_tokens (token, expires_at, user_id) VALUES (?, ?, ?)",
-      [token, new Date(decoded.exp * 1000), decoded.userId]
+      "INSERT INTO revoked_tokens (token, expires_at) VALUES (?, ?)",
+      [token, expiresAt]
     );
 
-    res.clearCookie("token", {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-    });
-
-    res.json({ message: "Logged out successfully" });
+    res.clearCookie("token");
+    res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
     console.error("Logout error:", error);
-
-    if (error.name === "JsonWebTokenError") {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-
-    res.status(500).json({ error: "Logout failed" });
+    // Still return success to ensure client-side cleanup
+    res.status(200).json({ message: "Logged out successfully" });
   }
 });
 

@@ -53,50 +53,28 @@ const loadGoogleScript = async (retries = 3) => {
 };
 
 const onSignIn = async () => {
-  if (!email.value || !password.value) {
-    error.value = "Please fill in all fields";
-    return;
-  }
-
-  loading.value = true;
-  error.value = "";
-
   try {
-    const deviceId = generateDeviceId();
-    console.log("Generated Device ID:", deviceId); // Add this line
+    loading.value = true;
+    error.value = "";
+
+    const deviceId = await generateDeviceId();
+    console.log("Generated Device ID:", deviceId);
 
     if (!deviceId) {
       error.value = "Failed to generate device ID";
       return;
     }
 
-    try {
-      const response = await api.post("/api/auth/login", {
-        email: email.value,
-        password: password.value,
-        deviceId,
-      });
-
-      console.log("API Login Response:", response.data);
-    } catch (error) {
-      console.error("Sign-in error:", error);
-      if (error.response?.status === 404) {
-        showPopup.value = true;
-      } else {
-        error.value = error.response?.data?.error || "Authentication failed";
-      }
-    }
-
-    // Log the device ID to ensure it's not empty
-    console.log("Generated Device ID:", deviceId);
-
-    storeDeviceId(deviceId); // Ensure this function stores the device ID properly
+    // Store device ID before making the request
+    storeDeviceId(deviceId);
 
     const response = await api.post("/api/auth/login", {
       email: email.value,
       password: password.value,
-      deviceId: deviceId,
+      deviceId
     });
+
+    console.log("API Login Response:", response.data);
 
     if (response.data.token) {
       localStorage.setItem("token", response.data.token);
@@ -114,10 +92,10 @@ const onSignIn = async () => {
     }
   } catch (error) {
     console.error("Sign-in error:", error);
+    error.value = error.response?.data?.error || "Authentication failed";
+    
     if (error.response?.status === 404) {
       showPopup.value = true;
-    } else {
-      error.value = error.response?.data?.error || "Authentication failed";
     }
   } finally {
     loading.value = false;

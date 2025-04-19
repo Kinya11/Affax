@@ -23,19 +23,25 @@ const auth = {
         await api.post('/api/auth/logout', {}, {
           headers: {
             'Authorization': `Bearer ${token}`,
-            'X-Device-ID': currentDeviceId // Include device ID in logout request
+            'X-Device-ID': currentDeviceId
           }
         });
       }
       
-      // Clear auth data but preserve device ID
+      // Always clear auth data regardless of API response
       this.clearAuthData();
+      
+      // Preserve device ID if needed
       if (currentDeviceId) {
         localStorage.setItem('currentDeviceId', currentDeviceId);
       }
+      
+      return true;
     } catch (error) {
       console.error('Logout error:', error);
-      throw error;
+      // Still clear local data even if API call fails
+      this.clearAuthData();
+      return false;
     }
   },
 
@@ -46,8 +52,6 @@ const auth = {
   clearAuthData() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    localStorage.removeItem('deviceId');
-    // Clear any other auth-related data
     document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
   },
 

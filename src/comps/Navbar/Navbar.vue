@@ -163,31 +163,17 @@ const handleUpgradeClick = async () => {
 
 const logout = async () => {
   try {
-    // Get token from storage
-    const token = localStorage.getItem('token');
-    
-    if (token) {
-      // Call backend logout
-      await auth.logout();
-    }
-
-    // Clear client-side storage
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    
-    // Clear cookies if any
-    document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    await auth.logout();
     
     // Close dropdown
     isAccountDropdownOpen.value = false;
     
-    // Redirect to login
+    // Always redirect to login page
     router.push('/sign-in');
     
   } catch (error) {
     console.error('Logout error:', error);
-    // Even if server logout fails, clear client side and redirect
-    localStorage.removeItem('token');
+    // Even if there's an error, redirect to login
     router.push('/sign-in');
   }
 };
