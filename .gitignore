@@ -146,3 +146,13 @@ dist
 .env.development
 .env.test
 .env.production
+
+.env
+.env.development
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+backend/.env.development
+backend/server_info.env
+ssl/
