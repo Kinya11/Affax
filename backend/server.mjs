@@ -24,6 +24,8 @@ import https from 'https';
 import subscriptionRoutes from './routes/subscriptionRoutes.mjs';
 import pool from './db.mjs';
 import { initializeStripe } from './config/stripe.js';
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
 
 const { lookup } = geoip;
 const execAsync = promisify(exec);
@@ -37,6 +39,22 @@ try {
   console.error('× Stripe initialization error:', error);
   process.exit(1);
 }
+
+// Email configuration
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: true,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+// Generate verification token
+const generateVerificationToken = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
 
 // Initialize Express app
 const app = express();
@@ -1699,6 +1717,171 @@ app.use(async (req, res, next) => {
 
   req.deviceProcessed = true;
   next();
+});
+
+// Account Routes
+app.get("/api/account", authenticateToken, async (req, res) => {
+  try {
+    const [user] = await pool.query(
+      "SELECT first_name, last_name, email, is_email_verified FROM users WHERE user_id = ?",
+      [req.user.userId]
+    );
+
+    if (!user.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({
+      firstName: user[0].first_name,
+      lastName: user[0].last_name,
+      email: user[0].email,
+      isEmailVerified: user[0].is_email_verified
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch account details" });
+  }
+});
+
+app.put("/api/account", authenticateToken, async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const { firstName, lastName, email, currentPassword, newPassword } = req.body;
+
+    // Validate email format
+    if (email && !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+
+    // Check if email is already taken
+    if (email) {
+      const [existingUsers] = await connection.query(
+        "SELECT user_id FROM users WHERE email = ? AND user_id != ?",
+        [email, req.user.userId]
+      );
+      if (existingUsers.length > 0) {
+        return res.status(409).json({ error: "Email already in use" });
+      }
+    }
+
+    // If changing password, verify current password
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: "Current password is required" });
+      }
+
+      const [users] = await connection.query(
+        "SELECT password FROM users WHERE user_id = ?",
+        [req.user.userId]
+      );
+
+      const validPassword = await argon2.verify(users[0].password, currentPassword);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+
+      // Hash new password
+      const hashedPassword = await argon2.hash(newPassword);
+
+      // Update password
+      await connection.query(
+        "UPDATE users SET password = ? WHERE user_id = ?",
+        [hashedPassword, req.user.userId]
+      );
+    }
+
+    // Update user details
+    await connection.query(
+      `UPDATE users 
+       SET first_name = ?, last_name = ?, email = ?
+       WHERE user_id = ?`,
+      [firstName, lastName, email, req.user.userId]
+    );
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      message: "Account updated successfully"
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Account update error:", error);
+    res.status(500).json({ 
+      error: "Failed to update account",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    connection.release();
+  }
+});
+
+// Email verification routes
+app.post("/api/auth/resend-verification", authenticateToken, async (req, res) => {
+  try {
+    const [user] = await pool.query(
+      "SELECT email, is_email_verified FROM users WHERE user_id = ?",
+      [req.user.userId]
+    );
+
+    if (!user.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user[0].is_email_verified) {
+      return res.status(400).json({ error: "Email already verified" });
+    }
+
+    const verificationToken = generateVerificationToken();
+    
+    await pool.query(
+      "UPDATE users SET verification_token = ?, verification_token_expires = DATE_ADD(NOW(), INTERVAL 24 HOUR) WHERE user_id = ?",
+      [verificationToken, req.user.userId]
+    );
+
+    const verificationLink = `${process.env.APP_URL}/verify-email?token=${verificationToken}`;
+
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: user[0].email,
+      subject: "Verify Your Email Address",
+      html: `
+        <h1>Email Verification</h1>
+        <p>Please click the link below to verify your email address:</p>
+        <a href="${verificationLink}">${verificationLink}</a>
+        <p>This link will expire in 24 hours.</p>
+      `
+    });
+
+    res.json({ success: true, message: "Verification email sent" });
+  } catch (error) {
+    console.error("Error sending verification email:", error);
+    res.status(500).json({ error: "Failed to send verification email" });
+  }
+});
+
+app.get("/api/auth/verify-email/:token", async (req, res) => {
+  try {
+    const [user] = await pool.query(
+      "SELECT user_id FROM users WHERE verification_token = ? AND verification_token_expires > NOW() AND is_email_verified = FALSE",
+      [req.params.token]
+    );
+
+    if (!user.length) {
+      return res.status(400).json({ error: "Invalid or expired verification token" });
+    }
+
+    await pool.query(
+      "UPDATE users SET is_email_verified = TRUE, verification_token = NULL, verification_token_expires = NULL WHERE user_id = ?",
+      [user[0].user_id]
+    );
+
+    res.json({ success: true, message: "Email verified successfully" });
+  } catch (error) {
+    console.error("Error verifying email:", error);
+    res.status(500).json({ error: "Failed to verify email" });
+  }
 });
 
 // Error Handling

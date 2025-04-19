@@ -12,6 +12,7 @@ import PricingPage from './pages/PricingPage.vue';
 import PaymentPage from './pages/PaymentPage.vue';
 import auth from '@/api/auth';
 import DeviceManagement from '@/comps/DeviceManagement.vue';
+// import AccountSettings from '@/pages/AccountSettings.vue';
 
 const routes = [
   {
@@ -93,6 +94,11 @@ const routes = [
     component: DeviceManagement,
     meta: { requiresAuth: true }
   },
+  {
+    path: '/verify-email',
+    name: 'VerifyEmail',
+    component: () => import('./pages/VerifyEmail.vue')
+  }
 ];
 
 // Add this route for development
