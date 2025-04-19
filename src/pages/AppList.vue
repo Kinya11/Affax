@@ -316,11 +316,19 @@ async function createNewList() {
 }
 
 function showError(message, action = null) {
-  // Implement your error display logic here
-  // This could be a toast notification or modal
-  console.error(message);
+  // Only show toast for critical errors that require user action
   if (action) {
-    // Show upgrade button or other action
+    toast.error(message, {
+      timeout: 8000,
+      onClick: () => router.push('/upgrade-plan'),
+      action: {
+        text: "Upgrade Plan",
+        onClick: () => router.push('/upgrade-plan')
+      }
+    });
+  } else {
+    // Just log non-critical errors
+    console.error(message);
   }
 }
 
@@ -415,7 +423,7 @@ async function deleteList() {
     if (error.response?.status === 401) {
       router.push('/sign-in');
     } else {
-      toast.error(error.response?.data?.message || 'Failed to delete list');
+      toast.error('Failed to delete list');
     }
   }
 }
@@ -483,7 +491,6 @@ const deleteAppFromList = async ({ listId, appId }) => {
       lists.value[listIndex].apps = lists.value[listIndex].apps.filter(
         app => app.app_id !== appId
       );
-      // Update the list size after removing the app
       updateListSize(listIndex);
     }
   } catch (error) {

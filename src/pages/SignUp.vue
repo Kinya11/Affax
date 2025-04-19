@@ -158,12 +158,18 @@ const onFormSubmit = async () => {
 // Google Sign-In with device ID
 const handleCredentialResponse = async (response) => {
   try {
-    const deviceId = generateDeviceId();
-    storeDeviceId(deviceId); // Make sure this is called before the API request
+    // Get existing device ID first
+    let deviceId = getStoredDeviceId();
+    
+    // Only generate if doesn't exist
+    if (!deviceId) {
+      deviceId = await generateDeviceId();
+      storeDeviceId(deviceId);
+    }
 
     const res = await api.post("/api/auth/google-login", {
       id_token: response.credential,
-      deviceId: deviceId // Make sure deviceId is included in the request
+      deviceId: deviceId
     });
 
     localStorage.setItem("token", res.data.token);
@@ -454,7 +460,7 @@ const initializeGoogleSignIn = async () => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   position: relative;
   z-index: 20;
-  margin-top: 0px; /* Changed from -40px to 0px to move it down */
+  margin-top: 45px; /* Changed from -40px to 0px to move it down */
   display: flex;
   flex-direction: column;
   align-items: center;

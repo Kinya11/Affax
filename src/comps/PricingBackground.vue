@@ -121,16 +121,13 @@ const initParticles = async () => {
 
 <style scoped>
 .background-wrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 100vh;
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
-  /* Add padding to compensate for blur overflow */
-  padding: 60px;
-  margin: -60px;
-  /* Ensure the wrapper extends beyond viewport */
-  transform: scale(1.1);
+  padding: 0;
+  margin: 0;
+  transform: none;
 }
 
 .background-wrapper::after {
@@ -440,11 +437,12 @@ const initParticles = async () => {
 
 /* Keep particles unblurred */
 .particles-container {
-  position: absolute;
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  overflow: hidden;
   z-index: 0;
   filter: none;
 }

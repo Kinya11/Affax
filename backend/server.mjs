@@ -130,7 +130,9 @@ app.use(cors(corsOptions));
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: false,
+    crossOriginOpenerPolicy: {
+      policy: "same-origin-allow-popups" // Changed from false to allow Google popups
+    },
     crossOriginResourcePolicy: false,
     contentSecurityPolicy: {
       directives: {
@@ -140,13 +142,14 @@ app.use(
           "'unsafe-inline'",
           "https://accounts.google.com",
           "https://apis.google.com",
-          "https://js.stripe.com" // Add Stripe's domain
+          "https://js.stripe.com"
         ],
         "frame-src": [
           "'self'", 
           "https://accounts.google.com",
-          "https://js.stripe.com" // Add Stripe's domain
+          "https://js.stripe.com"
         ],
+        "frame-ancestors": ["'self'"],
         "img-src": ["'self'", "data:", "https://lh3.googleusercontent.com"],
         "connect-src": [
           "'self'",
@@ -154,7 +157,7 @@ app.use(
           "http://localhost:5173",
           "https://api.affax.app",
           "https://affax.app",
-          "https://api.stripe.com" // Add Stripe's API domain
+          "https://api.stripe.com"
         ]
       }
     }
@@ -815,8 +818,6 @@ app.post("/api/auth/google-login", async (req, res) => {
       return res.status(400).json({ error: "Invalid device ID format" });
     }
 
-    await connection.beginTransaction();
-
     // Verify the token
     let ticket;
     try {
@@ -835,6 +836,8 @@ app.post("/api/auth/google-login", async (req, res) => {
       email: payload.email,
       sub: payload.sub
     });
+
+    await connection.beginTransaction();
 
     // Check if user exists
     let [users] = await connection.query(
@@ -863,9 +866,10 @@ app.post("/api/auth/google-login", async (req, res) => {
       user = users[0];
     }
 
-    // Check if device exists and is active
+    // Check device registration
     const [devices] = await connection.query(
-      "SELECT id FROM devices WHERE user_id = ? AND device_id = ? AND is_active = TRUE",
+      `SELECT id FROM devices 
+       WHERE user_id = ? AND device_id = ? AND is_active = TRUE`,
       [user.user_id, req.body.deviceId]
     );
 
@@ -873,22 +877,22 @@ app.post("/api/auth/google-login", async (req, res) => {
     const token = jwt.sign(
       { 
         userId: user.user_id,
-        email: user.email
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+        isAdmin: user.is_admin || 0
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: "24h" }
     );
 
     await connection.commit();
 
-    // Return success response
     res.json({
       token,
       user: {
         id: user.user_id,
         email: user.email,
         firstName: user.first_name,
-        lastName: user.last_name
+        lastName: user.last_name,
+        isAdmin: user.is_admin || 0
       },
       requiresDeviceRegistration: devices.length === 0
     });
@@ -896,10 +900,7 @@ app.post("/api/auth/google-login", async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error("Google login error:", error);
-    res.status(500).json({ 
-      error: "Internal server error during Google login",
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: "Failed to process Google sign-in" });
   } finally {
     connection.release();
   }
@@ -913,14 +914,14 @@ app.post("/api/auth/logout", async (req, res) => {
       return res.status(200).json({ message: "Logged out successfully" });
     }
 
-    // Decode token to get expiration time
+    // Decode token to get user ID and expiration time
     const decoded = jwt.decode(token);
     const expiresAt = new Date(decoded.exp * 1000); // Convert Unix timestamp to MySQL datetime
 
-    // Insert token with expiration time
+    // Insert token with expiration time and user_id
     await pool.query(
-      "INSERT INTO revoked_tokens (token, expires_at) VALUES (?, ?)",
-      [token, expiresAt]
+      "INSERT INTO revoked_tokens (token, expires_at, user_id) VALUES (?, ?, ?)",
+      [token, expiresAt, decoded.userId]
     );
 
     res.clearCookie("token");

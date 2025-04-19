@@ -43,7 +43,7 @@
             </div>
             <div class="device-actions">
               <div 
-                v-if="isCurrentDevice(device.deviceId)"
+                v-if="device.deviceId === currentDeviceId"
                 class="current-device-badge"
               >
                 Current Device
@@ -54,7 +54,7 @@
                 :class="['deactivate-btn', { 
                   'deactivating': device.isDeactivating
                 }]"
-                :disabled="device.isDeactivating || isCurrentDevice(device.deviceId)"
+                :disabled="device.isDeactivating || device.deviceId === currentDeviceId"
               >
                 {{ device.isDeactivating ? 'Deactivating...' : 'Deactivate' }}
               </button>
@@ -94,36 +94,21 @@ const fetchDevices = async () => {
     error.value = null;
     
     const deviceId = await getStoredDeviceId();
-    currentDeviceId.value = deviceId; // Make sure to set the current device ID
+    currentDeviceId.value = deviceId;
     
-    if (!deviceId) {
-      console.log('No device ID found, redirecting to device registration');
-      router.push('/device-register');
-      return;
-    }
-
     const response = await api.get('/api/devices', {
       headers: {
         'X-Device-ID': deviceId
       }
     });
 
-    if (!response.data.devices || response.data.devices.length === 0) {
-      console.log('No devices found, redirecting to device registration');
-      setTimeout(() => {
-        router.push('/device-register');
-      }, 1000);
-      return;
+    if (response.data.devices) {
+      activeDevices.value = response.data.devices.map(device => ({
+        ...device,
+        isDeactivating: false,
+        deviceId: device.device_id || device.deviceId, // Normalize deviceId field
+      }));
     }
-
-    activeDevices.value = response.data.devices.map(device => ({
-      ...device,
-      isDeactivating: false,
-      deviceId: device.device_id || device.deviceId, // Ensure consistent deviceId field
-      isCurrentDevice: (device.device_id || device.deviceId) === deviceId
-    }));
-    
-    seatLimit.value = response.data.seatLimit;
   } catch (error) {
     console.error('Error fetching devices:', error);
     handleError(error);
@@ -134,9 +119,8 @@ const fetchDevices = async () => {
 };
 
 const handleDeviceAction = (device) => {
-  // Don't even try to deactivate if it's the current device
-  if (isCurrentDevice(device.deviceId)) {
-    return;
+  if (device.deviceId === currentDeviceId.value) {
+    return; // Don't allow deactivation of current device
   }
   deactivateDevice(device.id);
 };
@@ -175,16 +159,8 @@ const deactivateDevice = async (deviceId) => {
 };
 
 const isCurrentDevice = (deviceId) => {
-  if (!deviceId || !currentDeviceId.value) return false;
-  // Normalize both IDs by removing any whitespace and converting to lowercase
-  const normalizedCurrentDevice = currentDeviceId.value.toString().toLowerCase().trim();
-  const normalizedDeviceId = deviceId.toString().toLowerCase().trim();
-  console.log('Comparing devices:', {
-    current: normalizedCurrentDevice,
-    checking: normalizedDeviceId,
-    isMatch: normalizedCurrentDevice === normalizedDeviceId
-  });
-  return normalizedCurrentDevice === normalizedDeviceId;
+  // Remove any debug logging
+  return deviceId === currentDeviceId.value;
 };
 
 onMounted(async () => {

@@ -4,6 +4,7 @@ Go to http://localhost:5173/settings to view this page
 <script setup>
 import { ref, onMounted } from 'vue';
 import Navbar from '@/comps/Navbar/Navbar.vue';
+import BlueGrayButton from '@/comps/BlueGrayButton.vue';
 import api from '@/api';
 import { useUserStore } from '@/stores/user';
 import { useToast } from 'vue-toastification';
@@ -239,13 +240,12 @@ const saveChanges = async () => {
           </div>
 
           <div class="form-actions">
-            <button 
+            <BlueGrayButton 
               type="submit" 
-              :disabled="loading" 
-              class="save-button"
+              :disabled="loading"
             >
               {{ loading ? 'Saving...' : 'Save Changes' }}
-            </button>
+            </BlueGrayButton>
           </div>
         </form>
       </div>
@@ -474,28 +474,9 @@ input:focus {
 }
 
 .form-actions {
-  text-align: center;
-  margin-top: 30px;
-}
-
-.save-button {
-  padding: 12px 30px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.save-button:hover {
-  background-color: #0056b3;
-}
-
-.save-button:disabled {
-  background-color: #6c757d;
-  cursor: not-allowed;
+  margin-top: 2rem;
+  display: flex;
+  justify-content: center;
 }
 
 @keyframes fadeIn {

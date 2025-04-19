@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
 import { useToast } from "vue-toastification";
 import api from "@/api";
-import { generateDeviceId, storeDeviceId } from "@/utils/device";
+import { generateDeviceId, storeDeviceId, getStoredDeviceId } from "@/utils/device";
 import BlueGrayButton from "@/comps/BlueGrayButton.vue";
 import InvertedButton from "@/comps/InvertedButton.vue";
 import PricingBackground from "@/comps/PricingBackground.vue";
@@ -138,51 +138,40 @@ const initializeGoogleAuth = async () => {
 const handleCredentialResponse = async (response) => {
   try {
     loading.value = true;
-    const deviceId = await generateDeviceId();
-
+    // Get existing device ID first instead of generating new one
+    let deviceId = getStoredDeviceId();
+    
+    // Only generate new device ID if one doesn't exist
     if (!deviceId) {
-      throw new Error("Failed to generate device ID");
+      deviceId = await generateDeviceId();
+      storeDeviceId(deviceId);
     }
-
-    // Store device ID before making the request
-    storeDeviceId(deviceId);
 
     const res = await api.post("/api/auth/google-login", {
       id_token: response.credential,
-      deviceId,
+      deviceId: deviceId
     });
 
     if (res.data.token) {
       localStorage.setItem("token", res.data.token);
-
+      
       if (res.data.user) {
         localStorage.setItem("user", JSON.stringify(res.data.user));
         userStore.setUser(res.data.user);
       }
 
-      // Update device ID if server returns a different one
-      if (res.data.deviceId && res.data.deviceId !== deviceId) {
+      // Don't update device ID if we already have one
+      if (!getStoredDeviceId() && res.data.deviceId) {
         storeDeviceId(res.data.deviceId);
       }
 
-      if (res.data.requiresDeviceRegistration) {
-        router.push({ name: "DeviceRegistration" });
-      } else {
-        router.push({ name: "AppList" });
-      }
+      await router.push('/app-list');
     }
   } catch (error) {
-    console.error("Google sign-in error:", {
-      message: error.message,
-      response: error.response?.data,
-      config: {
-        url: error.config?.url,
-        baseURL: error.config?.baseURL,
-        method: error.config?.method,
-      },
-    });
-    errorMessage.value =
-      "Failed to authenticate with Google. Please try again.";
+    console.error("Google sign-in error:", error);
+    errorMessage.value = error.response?.data?.error?.includes("device") 
+      ? "Device registration required"
+      : "Google sign-in failed. Please try again.";
   } finally {
     loading.value = false;
   }

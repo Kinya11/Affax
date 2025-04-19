@@ -1,20 +1,18 @@
 import api from '@/api';
 
-export const generateDeviceId = async (): Promise<string> => {
-  const components = [
+export const generateDeviceId = (): string => {
+  const hardwareFingerprint = [
     navigator.userAgent,
     navigator.platform,
+    navigator.hardwareConcurrency,
     screen.width + 'x' + screen.height,
-    crypto.getRandomValues(new Uint8Array(8)).join(''),
-    Date.now().toString(36)
-  ];
-  
-  // Create a hash of the components
-  const hashBuffer = new TextEncoder().encode(components.join('|'));
-  const hash = await crypto.subtle.digest('SHA-256', hashBuffer);
-  const hashArray = Array.from(new Uint8Array(hash));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return `dev_${hashHex.substring(0, 8)}`;
+    navigator.language,
+    // CPU class, GPU info, etc. could be added here
+  ].filter(Boolean).join('|');
+
+  // Create consistent hash that will always be the same for this device
+  const hash = btoa(hardwareFingerprint).replace(/[/+=]/g, '').substring(0, 32);
+  return `dev_${hash}`;
 };
 
 export const generateSimpleDeviceId = (): string => {
@@ -25,13 +23,19 @@ export const generateSimpleDeviceId = (): string => {
 };
 
 export const storeDeviceId = (deviceId: string): void => {
+  // Only store if different from existing
+  const existing = getStoredDeviceId();
+  if (existing && existing === deviceId) {
+    return;
+  }
+
   try {
     localStorage.setItem('deviceId', deviceId);
     if (window.sessionStorage) {
       sessionStorage.setItem('currentDeviceId', deviceId);
     }
   } catch (e) {
-    // Silent fail
+    console.error('Failed to store device ID:', e);
   }
 };
 

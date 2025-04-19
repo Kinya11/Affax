@@ -209,18 +209,37 @@ export default {
   opacity: 1;
 }
 
+/* Reset body overflow */
+:root {
+  overflow: hidden;
+}
+
+/* Main pricing section container */
 .pricing-section {
   text-align: center;
-  padding-top: calc(35px + 20px + 1rem);
-  padding-left: 20px;
-  padding-right: 20px;
+  padding: calc(35px + 20px) 20px 20px;
   height: 100vh;
+  width: 100vw;
   overflow-y: auto;
+  overflow-x: hidden;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Background container adjustments */
+:deep(.background-wrapper) {
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+  transform: none;
 }
 
 /* Ensure PricingBackground particles stay behind */
@@ -255,26 +274,33 @@ export default {
 .pricing-cards {
   display: flex;
   justify-content: center;
-  gap: 20px; /* Reduced gap */
-  max-width: 1200px;
-  margin: 20px auto 0; /* Reduced top margin */
-  padding-bottom: 20px; /* Reduced bottom padding */
+  gap: 30px; /* Increased gap between cards */
+  max-width: min(1400px, 100%); /* Increased max-width */
+  margin: 20px auto;
+  padding: 0 20px 40px;
+  box-sizing: border-box;
+  flex-wrap: wrap;
 }
 
 .card {
   border: 1px solid var(--medium-gray);
   border-radius: 16px;
-  padding: 24px;
-  width: 300px;
+  padding: 32px; /* Increased padding */
+  width: 350px; /* Increased from 300px */
   text-align: left;
   backdrop-filter: blur(10px);
   background-color: rgba(255, 255, 255, 0.7);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   display: flex;
   flex-direction: column;
-  min-height: 520px;
+  min-height: 600px; /* Increased minimum height */
   position: relative;
   z-index: 10; /* Ensure cards stay above particles */
+  flex: 0 1 350px; /* Increased from 300px */
+  min-width: 320px; /* Increased from 280px */
+  max-width: 100%;
+  margin-bottom: 20px;
+  box-sizing: border-box;
 }
 
 .card:hover {
@@ -294,7 +320,8 @@ export default {
 .plan-header {
   font-weight: 600;
   color: var(--blue-gray);
-  margin-bottom: 12px; /* Reduced margin */
+  margin-bottom: 16px; /* Increased margin */
+  font-size: 1.1rem; /* Increased font size */
 }
 
 .current-plan {
@@ -302,36 +329,36 @@ export default {
 }
 
 .plan-title {
-  font-size: 1.6rem; /* Slightly smaller title */
-  margin: 12px 0; /* Reduced margin */
+  font-size: 2rem; /* Increased from 1.6rem */
+  margin: 16px 0; /* Increased margin */
   color: var(--dark-gray);
 }
 
 .plan-price {
-  font-size: 1.3rem; /* Slightly smaller price */
-  margin-bottom: 20px; /* Reduced margin */
+  font-size: 1.5rem; /* Increased from 1.3rem */
+  margin-bottom: 24px; /* Increased margin */
   color: var(--app-gray);
 }
 
 .plan-features {
   list-style: none;
   padding: 0;
-  margin-bottom: 24px; /* Reduced margin */
+  margin-bottom: 32px; /* Increased margin */
   flex-grow: 1;
 }
 
 .plan-features li {
-  margin-bottom: 8px; /* Reduced margin between list items */
+  margin-bottom: 12px; /* Increased margin between list items */
   display: flex;
   align-items: center;
   color: var(--app-gray);
-  font-size: 0.95rem; /* Slightly smaller text */
+  font-size: 1.05rem; /* Increased font size */
 }
 
 .checkmark {
-  width: 16px; /* Slightly smaller checkmarks */
-  height: 16px;
-  margin-right: 8px;
+  width: 20px; /* Increased from 16px */
+  height: 20px;
+  margin-right: 10px;
   filter: brightness(0);
 }
 
@@ -340,9 +367,9 @@ export default {
   background-color: var(--blue-gray);
   color: white;
   border: none;
-  padding: 12px 20px; /* Reduced padding */
+  padding: 16px 24px; /* Increased padding */
   border-radius: 8px;
-  font-size: 0.95rem; /* Slightly smaller text */
+  font-size: 1.1rem; /* Increased font size */
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -374,18 +401,30 @@ export default {
   transform: none !important;
 }
 
+/* Add responsive adjustments */
 @media (max-width: 1024px) {
+  .pricing-section {
+    padding-top: 80px; /* Adjust for navbar */
+  }
+
   .pricing-cards {
     flex-direction: column;
     align-items: center;
     gap: 16px;
-    margin-top: 40px;
+    padding: 0 16px 60px;
+  }
+
+  .pricing-title {
+    font-size: 1.8rem; /* Smaller title on mobile */
+    margin-bottom: 40px;
   }
 
   .card {
-    min-height: auto;
     width: 100%;
-    max-width: 360px;
+    max-width: 400px; /* Increased from 360px */
+    min-width: auto;
+    margin-bottom: 20px;
+    padding: 24px; /* Slightly smaller padding on mobile */
   }
 
   .best-value {
@@ -395,5 +434,10 @@ export default {
   .best-value:hover {
     transform: translateY(-5px);
   }
+}
+
+/* Ensure all elements use border-box */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 </style>
