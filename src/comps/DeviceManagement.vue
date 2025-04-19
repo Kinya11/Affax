@@ -81,7 +81,7 @@ const seatLimit = ref(3);
 const loading = ref(true);
 const error = ref(null);
 const theme = ref('light');
-const currentDeviceId = ref(getStoredDeviceId());
+const currentDeviceId = ref(null);
 const initialLoading = ref(true);
 
 const toggleTheme = (newTheme) => {
@@ -93,41 +93,43 @@ const fetchDevices = async () => {
     loading.value = true;
     error.value = null;
     
-    const deviceId = getStoredDeviceId();
+    const deviceId = await getStoredDeviceId();
+    currentDeviceId.value = deviceId; // Make sure to set the current device ID
     
-    const deviceCheck = await api.get('/api/devices/check', {
+    if (!deviceId) {
+      console.log('No device ID found, redirecting to device registration');
+      router.push('/device-register');
+      return;
+    }
+
+    const response = await api.get('/api/devices', {
       headers: {
         'X-Device-ID': deviceId
       }
     });
-    
-    currentDeviceId.value = deviceCheck.data.deviceId || deviceId;
-    
-    const response = await api.get('/api/devices', {
-      headers: {
-        'X-Device-ID': currentDeviceId.value
-      }
-    });
 
-    if (response.data && response.data.devices) {
-      activeDevices.value = response.data.devices.map(device => ({
-        ...device,
-        isDeactivating: false,
-        deviceId: device.device_id || device.deviceId,
-        isCurrentDevice: isCurrentDevice(device.device_id || device.deviceId)
-      }));
-      seatLimit.value = response.data.seatLimit;
+    if (!response.data.devices || response.data.devices.length === 0) {
+      console.log('No devices found, redirecting to device registration');
+      setTimeout(() => {
+        router.push('/device-register');
+      }, 1000);
+      return;
     }
-  } catch (err) {
-    console.error('Error fetching devices:', err);
-    error.value = err.response?.data?.error || 'Failed to load devices';
-    activeDevices.value = [];
+
+    activeDevices.value = response.data.devices.map(device => ({
+      ...device,
+      isDeactivating: false,
+      deviceId: device.device_id || device.deviceId, // Ensure consistent deviceId field
+      isCurrentDevice: (device.device_id || device.deviceId) === deviceId
+    }));
+    
+    seatLimit.value = response.data.seatLimit;
+  } catch (error) {
+    console.error('Error fetching devices:', error);
+    handleError(error);
   } finally {
     loading.value = false;
-    // Add small delay before removing initial loading state
-    setTimeout(() => {
-      initialLoading.value = false;
-    }, 100);
+    initialLoading.value = false;
   }
 };
 
@@ -153,12 +155,11 @@ const deactivateDevice = async (deviceId) => {
     device.isDeactivating = true;
     
     const response = await api.post('/api/devices/deactivate', {
-      id: device.id,
-      deviceId: device.deviceId
+      deviceId: device.deviceId,
+      id: device.id
     }, {
       headers: {
-        'X-Device-ID': currentDeviceId.value,
-        'Authorization': `Bearer ${localStorage.getItem('token')}` // Ensure token is sent
+        'X-Device-ID': currentDeviceId.value
       }
     });
     
@@ -166,45 +167,30 @@ const deactivateDevice = async (deviceId) => {
       toast.success('Device deactivated successfully');
       activeDevices.value = activeDevices.value.filter(d => d.id !== deviceId);
     }
-  } catch (err) {
-    console.error('Error deactivating device:', err);
+  } catch (error) {
+    console.error('Error deactivating device:', error);
     device.isDeactivating = false;
-    
-    const errorMessage = err.response?.data?.error || 'Failed to deactivate device';
-    
-    if (err.response?.status === 403) {
-      toast.error('Cannot deactivate current device');
-    } else if (err.response?.status === 404) {
-      toast.error('Device not found');
-      activeDevices.value = activeDevices.value.filter(d => d.id !== deviceId);
-    } else if (err.response?.status === 401) {
-      toast.error('Session expired. Please sign in again.');
-      router.push('/sign-in');
-    } else {
-      toast.error(errorMessage);
-    }
+    toast.error(error.response?.data?.error || 'Failed to deactivate device');
   }
 };
 
 const isCurrentDevice = (deviceId) => {
   if (!deviceId || !currentDeviceId.value) return false;
-  const normalizedCurrentDevice = currentDeviceId.value.toLowerCase().trim();
-  const normalizedDeviceId = deviceId.toLowerCase().trim();
-  const result = normalizedCurrentDevice === normalizedDeviceId;
-  console.log('Device comparison:', {
+  // Normalize both IDs by removing any whitespace and converting to lowercase
+  const normalizedCurrentDevice = currentDeviceId.value.toString().toLowerCase().trim();
+  const normalizedDeviceId = deviceId.toString().toLowerCase().trim();
+  console.log('Comparing devices:', {
     current: normalizedCurrentDevice,
-    device: normalizedDeviceId,
-    isMatch: result
+    checking: normalizedDeviceId,
+    isMatch: normalizedCurrentDevice === normalizedDeviceId
   });
-  return result;
+  return normalizedCurrentDevice === normalizedDeviceId;
 };
 
-onMounted(() => {
-  fetchDevices();
-  // Shorter delay for more immediate response
-  setTimeout(() => {
-    initialLoading.value = false;
-  }, 50);
+onMounted(async () => {
+  const deviceId = await getStoredDeviceId();
+  currentDeviceId.value = deviceId;
+  await fetchDevices();
 });
 
 const formatDate = (date) => {

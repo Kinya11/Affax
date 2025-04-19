@@ -2,18 +2,16 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
+import { useToast } from "vue-toastification";
 import api from "@/api";
 import { generateDeviceId, storeDeviceId } from "@/utils/device";
 import BlueGrayButton from "@/comps/BlueGrayButton.vue";
+import InvertedButton from "@/comps/InvertedButton.vue";
 import PricingBackground from "@/comps/PricingBackground.vue";
 import PopupModal from "@/comps/SignInModal.vue";
 import Navbar from "@/comps/Navbar/Navbar.vue";
 
-let theme = ref("light");
-function toggleTheme(newTheme) {
-  theme.value = newTheme;
-}
-
+const toast = useToast();
 const router = useRouter();
 const userStore = useUserStore();
 const email = ref("");
@@ -85,7 +83,9 @@ const onSignIn = async () => {
       }
 
       if (response.data.requiresDeviceRegistration) {
-        router.push({ name: "DeviceRegister" });
+        // Instead of redirecting to DeviceRegistration route,
+        // redirect to AppList where the modal will be shown
+        router.push({ name: "AppList" });
       } else {
         router.push({ name: "AppList" });
       }
@@ -166,7 +166,7 @@ const handleCredentialResponse = async (response) => {
       }
 
       if (res.data.requiresDeviceRegistration) {
-        router.push({ name: "DeviceRegister" });
+        router.push({ name: "DeviceRegistration" });
       } else {
         router.push({ name: "AppList" });
       }
@@ -203,6 +203,39 @@ onMounted(() => {
     isLoaded.value = true;
   }, 100);
 });
+
+// Add these refs for the reset password functionality
+const showResetPasswordModal = ref(false);
+const resetEmail = ref('');
+const resetLoading = ref(false);
+const resetError = ref('');
+const resetSuccess = ref('');
+
+const sendResetLink = async () => {
+  try {
+    if (!resetEmail.value) {
+      toast.error("Please enter your email address");
+      return;
+    }
+    
+    resetLoading.value = true;
+    await api.post("/api/auth/reset-password-request", { 
+      email: resetEmail.value
+    });
+    
+    toast.success("If an account exists with this email, you will receive a reset link shortly.");
+    showResetPasswordModal.value = false;
+    resetEmail.value = '';
+  } catch (error) {
+    console.error("Reset password error:", error);
+    toast.error(
+      error.response?.data?.error || 
+      "Failed to send reset link. Please try again."
+    );
+  } finally {
+    resetLoading.value = false;
+  }
+};
 </script>
 
 <template>
@@ -253,6 +286,13 @@ onMounted(() => {
           />
         </label>
 
+        <!-- Add Forgot Password link -->
+        <div class="forgot-password">
+          <span class="nav-link forgot-password-link" @click="showResetPasswordModal = true">
+            Forgot Password?
+          </span>
+        </div>
+
         <BlueGrayButton
           id="sign-in-button"
           @click="onSignIn"
@@ -278,6 +318,40 @@ onMounted(() => {
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- Reset Password Modal -->
+  <div v-if="showResetPasswordModal" class="modal-overlay" @click.self="showResetPasswordModal = false">
+    <div class="modal-content">
+      <h2>Reset Password</h2>
+      <p>Enter your email address to receive a password reset link.</p>
+      
+      <div v-if="resetError" class="error-message">{{ resetError }}</div>
+      <div v-if="resetSuccess" class="success-message">{{ resetSuccess }}</div>
+      
+      <div class="input-container">
+        <input 
+          type="email" 
+          v-model="resetEmail" 
+          placeholder="Email"
+          class="modal-input"
+        />
+      </div>
+      
+      <div class="modal-buttons">
+        <BlueGrayButton 
+          @click="showResetPasswordModal = false"
+        >
+          Cancel
+        </BlueGrayButton>
+        <InvertedButton 
+          @click="sendResetLink"
+          :disabled="resetLoading"
+        >
+          {{ resetLoading ? 'Sending...' : 'Send Reset Link' }}
+        </InvertedButton>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -588,5 +662,110 @@ nav {
   100% {
     opacity: 0.6;
   }
+}
+
+/* Add these new styles */
+.forgot-password {
+  width: 100%;
+  text-align: center;
+  margin-top: -10px;
+  margin-bottom: 15px;
+}
+
+.forgot-password-link {
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  position: relative;
+  font-weight: 300;
+}
+
+/* Use the same nav-link animation styles */
+.forgot-password-link::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 1px;
+  bottom: -2px;
+  left: 0;
+  background-color: #666;
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.3s ease;
+}
+
+.forgot-password-link:hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.modal-content h2 {
+  margin: 0 0 1rem 0;
+  font-size: 24px;
+}
+
+.modal-content p {
+  margin-bottom: 1.5rem;
+  color: #666;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+/* Reset password modal input styles */
+.input-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.modal-input {
+  width: 80%;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.368);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  transition: border-color 0.2s ease;
+}
+
+.modal-input:focus {
+  outline: none;
+  border-color: #666;
+  box-shadow: 0 0 0 2px rgba(102, 102, 102, 0.1);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
 }
 </style>

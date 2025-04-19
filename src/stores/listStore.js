@@ -2,58 +2,44 @@ import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import api from '@/api';
 
-export const useListStore = defineStore('lists', () => {
-  const lists = ref([]);
-  const isLoading = ref(false);
-  let lastFetchTimestamp = 0;
-  const FETCH_COOLDOWN = 2000;
-
-  async function fetchLists(force = false) {
-    const now = Date.now();
-    if (!force && now - lastFetchTimestamp < FETCH_COOLDOWN) {
-      return lists.value;
-    }
-
-    try {
-      isLoading.value = true;
-      const response = await api.get("/api/lists");
-      // Initialize each list with default properties
-      const initializedLists = (Array.isArray(response.data) ? response.data : [])
-        .map(list => ({
-          ...list,
-          apps: [],
-          size: '0 GB',
-          isExpanded: false,
-          isEditing: false
-        }));
-      lists.value = initializedLists;
-      lastFetchTimestamp = now;
-      return lists.value;
-    } catch (error) {
-      console.error('Failed to fetch lists:', error);
-      lists.value = [];
-      return [];
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  function getList(id) {
-    return lists.value.find(list => list.id === id);
-  }
-
-  function updateList(id, updates) {
-    const index = lists.value.findIndex(list => list.id === id);
-    if (index !== -1) {
-      lists.value[index] = { ...lists.value[index], ...updates };
+export const useListStore = defineStore('list', {
+  state: () => ({
+    lists: [],
+    isLoading: false
+  }),
+  actions: {
+    async fetchLists() {
+      this.isLoading = true;
+      try {
+        const { data } = await api.get('/api/lists');
+        // Preserve existing apps data when updating lists
+        const existingLists = this.lists;
+        this.lists = data.map(newList => {
+          const existingList = existingLists.find(list => list.id === newList.id);
+          return {
+            ...newList,
+            isExpanded: existingList?.isExpanded || false,
+            isEditing: existingList?.isEditing || false,
+            apps: existingList?.apps || [],
+            size: existingList?.size || '0 GB'
+          };
+        });
+      } catch (error) {
+        console.error('Error fetching lists:', error);
+        throw error;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    updateList(listId, updates) {
+      const index = this.lists.findIndex(list => list.id === listId);
+      if (index !== -1) {
+        this.lists[index] = { 
+          ...this.lists[index], 
+          ...updates,
+          apps: updates.apps || this.lists[index].apps // Preserve apps if not included in updates
+        };
+      }
     }
   }
-
-  return {
-    lists,
-    isLoading,
-    fetchLists,
-    getList,
-    updateList
-  };
 });

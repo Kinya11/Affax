@@ -40,14 +40,42 @@ try {
   process.exit(1);
 }
 
-// Email configuration
+// Create email transporter with Gmail-specific settings
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  secure: true,
+  service: 'gmail',  // Use Gmail service instead of manual host/port
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
+  },
+  // Increase timeouts and add retries
+  pool: true,
+  maxConnections: 1,
+  maxMessages: 3,
+  rateDelta: 1000,
+  rateLimit: 3,
+  tls: {
+    rejectUnauthorized: false
+  }
+});
+
+// Add more detailed error logging for SMTP verification
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('SMTP Connection Error Details:', {
+      name: error.name,
+      code: error.code,
+      command: error.command,
+      message: error.message,
+      stack: error.stack
+    });
+    
+    // Log environment variables (excluding password)
+    console.log('SMTP Configuration:', {
+      user: process.env.SMTP_USER,
+      service: 'gmail'
+    });
+  } else {
+    console.log('SMTP Server is ready to send emails');
   }
 });
 
@@ -1884,6 +1912,150 @@ app.get("/api/auth/verify-email/:token", async (req, res) => {
   }
 });
 
+app.post("/api/auth/reset-password-request", async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email || typeof email !== 'string' || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+    return res.status(400).json({ error: "Valid email address is required" });
+  }
+
+  // Validate environment variables
+  if (!process.env.FRONTEND_URL) {
+    console.error("Missing FRONTEND_URL configuration");
+    return res.status(500).json({ 
+      error: "Server configuration error",
+      details: process.env.NODE_ENV === 'development' ? 'Missing FRONTEND_URL configuration' : undefined
+    });
+  }
+
+  try {
+    console.log('Processing reset password request:', {
+      email,
+      frontendUrl: process.env.FRONTEND_URL
+    });
+
+    const [users] = await pool.query(
+      "SELECT user_id, email FROM users WHERE email = ?",
+      [email]
+    );
+
+    // Always return success to prevent email enumeration
+    if (users.length === 0) {
+      return res.json({
+        success: true,
+        message: "If an account exists with this email, you will receive a reset link shortly."
+      });
+    }
+
+    const userId = users[0].user_id;
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpires = new Date(Date.now() + 3600000); // 1 hour
+
+    // Update user with reset token
+    await pool.query(
+      `UPDATE users 
+       SET reset_token = ?,
+           reset_token_expires = ?
+       WHERE user_id = ?`,
+      [resetToken, resetTokenExpires, userId]
+    );
+
+    // Log the reset link in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Reset link:', `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`);
+    }
+
+    // Send email with better error handling
+    try {
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+      
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || '"Your App" <noreply@yourapp.com>',
+        to: email,
+        subject: "Password Reset Request",
+        html: `
+          <h1>Password Reset</h1>
+          <p>Click the link below to reset your password:</p>
+          <a href="${resetLink}">${resetLink}</a>
+          <p>This link will expire in 1 hour.</p>
+          <p>If you didn't request this reset, please ignore this email.</p>
+        `,
+        timeout: 10000,
+        disableFileAccess: true,
+        disableUrlAccess: true
+      });
+
+      res.json({
+        success: true,
+        message: "If an account exists with this email, you will receive a reset link shortly."
+      });
+    } catch (emailError) {
+      console.error("Email sending error:", emailError);
+      res.status(500).json({ 
+        error: "Password reset initiated but email delivery failed",
+        details: process.env.NODE_ENV === 'development' ? emailError.message : undefined
+      });
+    }
+
+  } catch (error) {
+    console.error("Password reset request error:", error);
+    res.status(500).json({ 
+      error: "Failed to process password reset request",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: "Token and new password are required" });
+  }
+
+  try {
+    // Find user with valid reset token
+    const [users] = await pool.query(
+      `SELECT user_id 
+       FROM users 
+       WHERE reset_token = ? 
+       AND reset_token_expires > NOW()`,
+      [token]
+    );
+
+    if (users.length === 0) {
+      return res.status(400).json({ error: "Invalid or expired reset token" });
+    }
+
+    const userId = users[0].user_id;
+
+    // Hash the new password
+    const hashedPassword = await argon2.hash(newPassword);
+
+    // Update password and clear reset token
+    await pool.query(
+      `UPDATE users 
+       SET password = ?,
+           reset_token = NULL,
+           reset_token_expires = NULL
+       WHERE user_id = ?`,
+      [hashedPassword, userId]
+    );
+
+    res.json({
+      success: true,
+      message: "Password reset successful"
+    });
+
+  } catch (error) {
+    console.error("Password reset error:", error);
+    res.status(500).json({ 
+      error: "Failed to reset password",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // Error Handling
 app.use((err, req, res, next) => {
   res.status(err.statusCode || 500).json({
@@ -1914,6 +2086,46 @@ app.use('/api/payment', paymentRoutes);
 
 // Mount the subscription routes
 app.use('/api/subscription', subscriptionRoutes);
+
+// WARNING: Development only endpoint
+app.delete('/api/dev/accounts', async (req, res) => {
+  try {
+    // Only allow in development environment
+    if (process.env.NODE_ENV !== 'development') {
+      return res.status(403).json({ error: 'Only available in development environment' });
+    }
+
+    // Delete all user-related data with error logging
+    const tables = [
+      'revoked_tokens',
+      'installations',
+      'list_items',
+      'lists',
+      'devices',
+      'user_activity_log',  // Add this table BEFORE users
+      'users'
+    ];
+
+    for (const table of tables) {
+      try {
+        console.log(`Attempting to delete from ${table}`);
+        await pool.query(`DELETE FROM ${table}`);
+        console.log(`Successfully deleted from ${table}`);
+      } catch (tableError) {
+        console.error(`Error deleting from ${table}:`, tableError);
+        throw new Error(`Failed to delete from ${table}: ${tableError.message}`);
+      }
+    }
+    
+    res.json({ message: 'All accounts and related data deleted' });
+  } catch (error) {
+    console.error('Error deleting accounts:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete accounts',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
 
 // Handle 404 for undefined API routes
 app.use('/api/*', (req, res) => {

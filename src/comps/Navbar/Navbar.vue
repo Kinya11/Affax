@@ -177,6 +177,10 @@ const logout = async () => {
     router.push('/sign-in');
   }
 };
+
+const handleLogoClick = () => {
+  router.push('/');
+};
 </script>
 
 <template>

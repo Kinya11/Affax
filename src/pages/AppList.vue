@@ -5,7 +5,8 @@ import {
   onUnmounted, 
   onBeforeUnmount, 
   computed,
-  nextTick 
+  nextTick,
+  watch
 } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useUserStore } from '@/stores/user';
@@ -25,6 +26,7 @@ import { useToast } from 'vue-toastification';
 import { getStoredDeviceId, storeDeviceId } from '@/utils/device';
 import { useListStore } from '@/stores/listStore';
 import { storeToRefs } from 'pinia';
+import DeviceRegistration from '@/comps/DeviceRegistrationModal.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -50,8 +52,11 @@ const confirmDeleteModal = ref(null);
 const currentListId = ref(null);
 const sudoPasswordModal = ref(null);
 const currentListForInstall = ref(null);
+const showDeviceRegistration = ref(false);
 
 const installButtonRefs = ref({});
+const isInstalling = ref(false);
+const installingListId = ref(null);
 
 const setInstallButtonRef = (el, listId) => {
   if (el) {
@@ -77,40 +82,49 @@ const handleInstallError = (error, listId) => {
   // ... existing error handling code ...
 }
 
+
+const onDeviceRegistered = async (deviceDetails) => {
+  try {
+    showDeviceRegistration.value = false;
+    await fetchUserLists();
+    toast.success('Device registered successfully');
+  } catch (error) {
+    console.error('Error after device registration:', error);
+    if (error.response?.status === 401) {
+      router.push('/sign-in');
+    } else {
+      toast.error('Failed to load apps after device registration');
+    }
+  }
+};
+
+onMounted(async () => {
+  await checkDeviceRegistration();
+});
+
 const checkDeviceRegistration = async () => {
   try {
-    const deviceId = await getStoredDeviceId(); // Add await here
+    const deviceId = await getStoredDeviceId();
     const token = localStorage.getItem('token');
 
-    console.log('AppList checking device:', deviceId);
-
     if (!token) {
+      console.log('No token found, redirecting to sign-in');
       router.push('/sign-in');
       return false;
     }
     
     if (!deviceId) {
-      router.push('/device-register');
+      console.log('No device ID found, showing registration modal');
+      showDeviceRegistration.value = true;
       return false;
     }
 
-    const { data } = await api.get('/api/devices/check', {
-      headers: {
-        'X-Device-ID': deviceId
-      }
-    });
-    
-    console.log('Device check response:', data);
+    const { data } = await api.get('/api/devices/check');
 
-    if (!data.registered || !data.existingDevice) {
-      localStorage.removeItem('deviceId');
-      router.push('/device-register');
+    if (!data.registered) {
+      console.log('Device not registered, showing registration modal');
+      showDeviceRegistration.value = true;
       return false;
-    }
-
-    // Update device ID if server returns a different one
-    if (data.deviceId && data.deviceId !== deviceId) {
-      storeDeviceId(data.deviceId);
     }
 
     return true;
@@ -124,6 +138,26 @@ const checkDeviceRegistration = async () => {
   }
 };
 
+// Make sure this is called when the component mounts
+onMounted(async () => {
+  console.log('AppList mounted, checking device registration...');
+  const isDeviceRegistered = await checkDeviceRegistration();
+  if (!isDeviceRegistered) {
+    console.log('Device not registered, showing modal');
+    showDeviceRegistration.value = true;
+  }
+});
+
+// Add this to ensure the modal is properly shown/hidden
+watch(showDeviceRegistration, (newValue) => {
+  console.log('showDeviceRegistration changed:', newValue);
+  if (newValue) {
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
+  }
+});
+
 async function fetchUserLists() {
   try {
     await listStore.fetchLists();
@@ -131,7 +165,7 @@ async function fetchUserLists() {
     // Only proceed if we have lists
     if (!lists.value?.length) return;
 
-    // Fetch items for each list
+    // Create an array of promises for fetching items for each list
     const itemPromises = lists.value.map(list => 
       api.get(`/api/lists/${list.id}/items`)
         .then(({ data }) => ({ 
@@ -145,17 +179,22 @@ async function fetchUserLists() {
         })
     );
 
+    // Wait for all requests to complete
     const results = await Promise.all(itemPromises);
     
     // Update each list with its items
     results.forEach(({ listId, items }) => {
-      listStore.updateList(listId, { 
-        apps: items,
-        size: calculateListSize(items)
-      });
+      const listIndex = lists.value.findIndex(list => list.id === listId);
+      if (listIndex !== -1) {
+        listStore.updateList(listId, { 
+          apps: items,
+          size: calculateListSize(items)
+        });
+      }
     });
   } catch (error) {
     console.error('Error fetching user lists:', error);
+    throw error;
   }
 }
 
@@ -204,6 +243,14 @@ function adjustWidth(event) {
 
 // List expansion with animation
 function expandList(index) {
+  console.log('Expanding list at index:', index);
+  console.log('Current list state:', lists.value[index]);
+  
+  if (!lists.value[index]) {
+    console.error('Invalid list index:', index);
+    return;
+  }
+
   // Toggle the expanded state
   lists.value[index].isExpanded = !lists.value[index].isExpanded;
   
@@ -214,6 +261,8 @@ function expandList(index) {
     }
     expandedListLastIndex.value = index;
   }
+
+  console.log('New list state:', lists.value[index]);
 }
 
 async function createNewList() {
@@ -241,14 +290,15 @@ async function createNewList() {
       size: "0 GB",
     };
 
-    lists.value.push(newList);
+    // Instead of directly pushing to lists, refresh all lists
+    await fetchUserLists();
+    
+    // Reset the new list name input
     newListName.value = "New List";
     
     // Dispatch event for navbar update
     window.dispatchEvent(new CustomEvent('list-created'));
-    
-    // Remove this line:
-    // toast.success('List created successfully');
+
   } catch (error) {
     if (error.response?.status === 403) {
       toast.error("You've reached your list limit", {
@@ -326,31 +376,46 @@ async function deleteList() {
   }
 
   try {
-    const deletedList = lists.value.splice(deletingIndex, 1)[0];
+    // Store a copy of the list before deletion
+    const deletedList = lists.value[deletingIndex];
     
-    if (expandedListLastIndex.value >= deletingIndex) {
-      expandedListLastIndex.value = Math.max(0, expandedListLastIndex.value - 1);
-    }
+    // Remove the list from the array
+    lists.value.splice(deletingIndex, 1);
+    
+    // Reset expanded state
+    expandedListLastIndex.value = 0;
+    
+    // Make sure all remaining lists are collapsed
+    lists.value.forEach(list => {
+      list.isExpanded = false;
+    });
 
+    // Close the modal and reset deletion state
     confirmDeleteModal.value.closeModal();
     listToDelete.value = null;
 
+    // Make the API call to delete the list
     await api.delete(`/api/lists/${listId}`);
     
     // Dispatch event for navbar update
     window.dispatchEvent(new CustomEvent('list-deleted'));
+
+    // Refresh the lists data to ensure everything is in sync
+    await fetchUserLists();
+    
+    // Make sure lists remain closed after refresh
+    lists.value.forEach(list => {
+      list.isExpanded = false;
+    });
   } catch (error) {
+    // If the API call fails, restore the deleted list
     lists.value.splice(deletingIndex, 0, deletedList);
     
     console.error('Delete failed:', error);
-    if (error.response) {
-      if (error.response.status === 401) {
-        router.push('/sign-in');
-      } else {
-        alert(`Delete failed: ${error.response.data?.message || 'Server error'}`);
-      }
+    if (error.response?.status === 401) {
+      router.push('/sign-in');
     } else {
-      alert('Network error - could not delete list');
+      toast.error(error.response?.data?.message || 'Failed to delete list');
     }
   }
 }
@@ -441,15 +506,6 @@ const openAddAppsModal = (listId) => {
   currentListId.value = listId;
   addAppsModal.value.openModal();
 };
-
-const isInstalling = ref(false)
-const installingListId = ref(null)
-
-const openDeleteModal = (index) => {
-  if (isListDisabled.value) return;
-  listToDelete.value = index;
-  confirmDeleteModal.value.openModal();
-}
 
 const pollInterval = ref(null)
 const monitorInstallation = async (installationId, listId) => {
@@ -598,10 +654,17 @@ onBeforeUnmount(() => {
 const isListDisabled = computed(() => {
   return isInstalling.value || installingListId.value !== null;
 });
+
+const openDeleteModal = (index) => {
+  if (isListDisabled.value || isInstalling.value) return;
+  
+  listToDelete.value = index;
+  confirmDeleteModal.value.openModal();
+};
 </script>
 
 <template>
-  <div class="app-list-container">
+  <div class="app-list-container" :class="theme">
     <Navbar @toggled="toggleTheme" />
 
     <div id="applist-main-container">
@@ -624,8 +687,13 @@ const isListDisabled = computed(() => {
          <div 
             class="hitbox" 
             @click="expandList(index)"
+            style="cursor: pointer;"
           ></div>
-          <div class="container-top-flex" :class="theme">
+          <div 
+            class="container-top-flex" 
+            :class="theme"
+            @click="expandList(index)"
+          >
             <div class="top-flex-inline-div">
               <input
                 v-if="list.isEditing"
@@ -683,8 +751,7 @@ const isListDisabled = computed(() => {
                 @delete-app="deleteAppFromList"
               />
               <div 
-                v-if="list.apps.length === 0" 
-                :key="'empty-' + list.id" 
+                v-if="!list.apps?.length" 
                 class="empty-list-message"
               >
                 No apps in this list yet
@@ -710,7 +777,7 @@ const isListDisabled = computed(() => {
             </BlueGrayButton>
             <InvertedButton
               v-if="list.isExpanded"
-              @click.stop="openDeleteModal(index)"
+              @click.stop="() => openDeleteModal(index)"
               :disabled="isListDisabled"
               :class="{ 'disabled': isListDisabled }"
             >
@@ -741,50 +808,16 @@ const isListDisabled = computed(() => {
       @confirm="handleSudoConfirm"
       @cancel="handleSudoCancel"
     />
+
+    <DeviceRegistration
+      v-if="showDeviceRegistration"
+      :theme="theme"
+      @registered="onDeviceRegistered"
+    />
   </div>
 </template>
 
 <style scoped>
-.list-container {
-  position: relative;
-  width: 100%;
-}
-
-.hitbox {
-  width: 77.5%;
-  height: 70px;
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1000;
-  margin-left: 12.5%;
-  margin-top: -15px;
-}
-
-.container-top-flex {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.top-flex-inline-div {
-  display: flex;
-  align-items: center;
-  gap: 10px; /* Space between name and arrow */
-}
-
-.list-name,
-.list-name-input {
-  font-size: 1.2rem;
-  font-weight: 800;
-  padding: 3px 5px;
-  margin: 0;
-  white-space: nowrap;
-  position: relative; /* Ensure text stays above hitbox */
-  z-index: 1001;
-}
-
 .app-list-container {
   position: relative;
   min-height: 100vh;

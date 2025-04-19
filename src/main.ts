@@ -23,7 +23,8 @@ const toastOptions = {
   icon: true,
   rtl: false,
   maxToasts: 3,
-  toastClassName: 'centered-toast'
+  toastClassName: 'centered-toast',
+  containerClassName: 'toast-container'
 };
 
 app.use(pinia);

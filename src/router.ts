@@ -83,22 +83,22 @@ const routes = [
     redirect: '/sign-in'
   },
   {
-    path: '/device-register',
-    name: 'DeviceRegister',
-    component: () => import('./pages/DeviceRegistration.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
     path: '/devices',
     name: 'DeviceManagement',
     component: DeviceManagement,
     meta: { requiresAuth: true }
   },
   {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('@/pages/ResetPassword.vue')
+  },
+  {
     path: '/verify-email',
     name: 'VerifyEmail',
     component: () => import('./pages/VerifyEmail.vue')
   }
+
 ];
 
 // Add this route for development
@@ -137,17 +137,11 @@ router.beforeEach((to, from, next) => {
       .then(response => {
         const hasDevices = response.data.devices && response.data.devices.length > 0;
 
-        // If no devices, always redirect to device registration
-        if (!hasDevices && to.path !== '/device-register') {
-          console.log('No devices found, redirecting to device registration');
-          next('/device-register');
-          return;
-        }
-
-        // If we have devices but no current device ID, redirect to registration
-        if (hasDevices && !deviceId && to.path !== '/device-register') {
-          console.log('No current device ID, redirecting to device registration');
-          next('/device-register');
+        // If no devices or no device ID, continue to the requested route
+        // The DeviceRegistrationModal will be shown by the components that need it
+        if (!hasDevices || !deviceId) {
+          console.log('No devices or device ID found - modal will handle registration');
+          next();
           return;
         }
 

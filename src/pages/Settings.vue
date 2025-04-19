@@ -8,6 +8,10 @@ import api from '@/api';
 import { useUserStore } from '@/stores/user';
 import { useToast } from 'vue-toastification';
 
+// Add imports for eye icons
+import EyeShow from '@/assets/Eye_Show.png';
+import EyeHide from '@/assets/Eye_Hide.png';
+
 const toast = useToast();
 const theme = ref('light');
 const userStore = useUserStore();
@@ -16,6 +20,9 @@ const error = ref('');
 const success = ref('');
 const isEmailVerified = ref(false);
 const isResendingVerification = ref(false);
+const showCurrentPassword = ref(false);
+const showNewPassword = ref(false);
+const showConfirmPassword = ref(false);
 
 const formData = ref({
   firstName: '',
@@ -172,32 +179,62 @@ const saveChanges = async () => {
             <h2>Security</h2>
             <div class="form-group">
               <label for="currentPassword">Current Password</label>
-              <input 
-                type="password" 
-                id="currentPassword" 
-                v-model="formData.currentPassword"
-                :disabled="loading"
-              />
+              <div class="password-input-container">
+                <input 
+                  :type="showCurrentPassword ? 'text' : 'password'"
+                  id="currentPassword" 
+                  v-model="formData.currentPassword"
+                  :disabled="loading"
+                />
+                <button 
+                  type="button"
+                  class="toggle-password"
+                  @click="showCurrentPassword = !showCurrentPassword"
+                  :aria-label="showCurrentPassword ? 'Hide current password' : 'Show current password'"
+                >
+                  <img :src="showCurrentPassword ? EyeHide : EyeShow" alt="toggle password visibility" />
+                </button>
+              </div>
             </div>
 
             <div class="form-group">
               <label for="newPassword">New Password</label>
-              <input 
-                type="password" 
-                id="newPassword" 
-                v-model="formData.newPassword"
-                :disabled="loading"
-              />
+              <div class="password-input-container">
+                <input 
+                  :type="showNewPassword ? 'text' : 'password'"
+                  id="newPassword" 
+                  v-model="formData.newPassword"
+                  :disabled="loading"
+                />
+                <button 
+                  type="button"
+                  class="toggle-password"
+                  @click="showNewPassword = !showNewPassword"
+                  :aria-label="showNewPassword ? 'Hide new password' : 'Show new password'"
+                >
+                  <img :src="showNewPassword ? EyeHide : EyeShow" alt="toggle password visibility" />
+                </button>
+              </div>
             </div>
 
             <div class="form-group">
               <label for="confirmPassword">Confirm New Password</label>
-              <input 
-                type="password" 
-                id="confirmPassword" 
-                v-model="formData.confirmPassword"
-                :disabled="loading"
-              />
+              <div class="password-input-container">
+                <input 
+                  :type="showConfirmPassword ? 'text' : 'password'"
+                  id="confirmPassword" 
+                  v-model="formData.confirmPassword"
+                  :disabled="loading"
+                />
+                <button 
+                  type="button"
+                  class="toggle-password"
+                  @click="showConfirmPassword = !showConfirmPassword"
+                  :aria-label="showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'"
+                >
+                  <img :src="showConfirmPassword ? EyeHide : EyeShow" alt="toggle password visibility" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -234,9 +271,9 @@ export default {
 }
 
 .settings-content {
-  padding: 40px 20px;
   max-width: 800px;
   margin: 0 auto;
+  padding: 2rem;
 }
 
 .settings-header {
@@ -264,10 +301,10 @@ export default {
 }
 
 .card {
-  background: white;
+  background: rgba(255, 255, 255, 0.9);
   border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  padding: 30px;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .dark .card {
@@ -276,7 +313,8 @@ export default {
 }
 
 .form-section {
-  margin-bottom: 40px;
+  margin-bottom: 2rem;
+  padding: 0 1rem;
 }
 
 .form-section h2 {
@@ -293,7 +331,8 @@ export default {
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 1.5rem;
+  width: 100%;
 }
 
 .form-group label {
@@ -307,8 +346,65 @@ export default {
   color: #e9ecef;
 }
 
-input {
+/* Input container styles */
+.form-group input,
+.password-input-container {
+  width: calc(100% - 24px); /* Account for padding */
+  max-width: 100%;
+  margin: 0;
+}
+
+/* Email container specific styles */
+.email-container {
+  width: calc(100% - 24px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.email-container input {
+  flex: 1;
+  width: auto;
+}
+
+/* Password input container styles */
+.password-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
   width: 100%;
+}
+
+.password-input-container input {
+  width: 100%;
+  padding-right: 40px; /* Make room for the toggle button */
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.toggle-password:hover {
+  opacity: 1;
+}
+
+.toggle-password img {
+  width: 20px;
+  height: 20px;
+}
+
+/* Input styles */
+input {
   padding: 12px;
   border: 2px solid #e9ecef;
   border-radius: 8px;
@@ -329,12 +425,6 @@ input:focus {
 
 .dark input:focus {
   border-color: #0056b3;
-}
-
-.email-container {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .email-status {

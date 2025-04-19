@@ -45,7 +45,8 @@ html {
 /* Vue-Toastification container styles */
 .Vue-Toastification__container.toast-container {
   z-index: 100002 !important; /* Higher than navbar's z-index of 10000 */
-  top: 20px !important;
+  top: 20px !important; /* Just a small gap from the top of the window */
+  padding-top: 0 !important; /* Remove the padding */
 }
 
 /* Optional: Adjust individual toast z-index if needed */
